@@ -1,4 +1,4 @@
-From bc9faacf7b1366da7e5572bd5e33461ef92a53aa Mon Sep 17 00:00:00 2001
+From 490941dd3669d01388dd24b8cac9ad030174d257 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Sun, 8 Nov 2026 10:32:11 +0000
 Subject: [PATCH 3/3] feat: build for wasm32-wasip1
@@ -41,7 +41,7 @@ Claude-Session: https://claude.ai/code/session_018JFwoob6fHaD4i2xGpSuk7
  crates/tippecanoe-rs/src/tippecanoe_main.rs | 129 +++++++++++++++--
  src/buf.rs                                  |  28 +++-
  src/ingest/arrow.rs                         |  10 ++
- src/ingest/mod.rs                           |   6 +-
+ src/ingest/mod.rs                           |  39 +++--
  src/join/mod.rs                             |  14 +-
  src/join/source.rs                          |   4 +-
  src/lib.rs                                  |   1 +
@@ -55,7 +55,7 @@ Claude-Session: https://claude.ai/code/session_018JFwoob6fHaD4i2xGpSuk7
  src/sink/pmtiles.rs                         |   4 +-
  src/tiler/engine.rs                         |  17 +++
  src/tiler/mod.rs                            |  12 +-
- 29 files changed, 509 insertions(+), 64 deletions(-)
+ 29 files changed, 538 insertions(+), 68 deletions(-)
  create mode 100644 crates/tippecanoe-rs/src/os.rs
  create mode 100644 src/pool.rs
 
@@ -837,10 +837,30 @@ index 489e35a..7a70d4d 100644
          ParquetRecordBatchReaderBuilder::try_new(file).map_err(|e| read_error(fname, e))?;
      let full = Table::new(builder.schema(), fname, cfg)?;
 diff --git a/src/ingest/mod.rs b/src/ingest/mod.rs
-index 29b9d44..a13d8a0 100644
+index 29b9d44..2e80de7 100644
 --- a/src/ingest/mod.rs
 +++ b/src/ingest/mod.rs
-@@ -441,10 +441,8 @@ fn open_source(src: &Source) -> Result<(Option<std::fs::File>, Option<memmap2::M
+@@ -419,6 +419,19 @@ fn read_all(r: &mut dyn Read, fname: &str, gz: bool) -> crate::Result<Vec<u8>> {
+     Ok(raw)
+ }
+ 
++/// WASI has no mmap; there FlatGeobuf and geobuf input, which tippecanoe only
++/// reads mapped, is read into memory instead.
++#[cfg(target_os = "wasi")]
++fn read_unmapped(map: &Option<memmap2::Mmap>, file: Option<&std::fs::File>) -> Option<Vec<u8>> {
++    if map.is_some() {
++        return None;
++    }
++    let mut f = file?;
++    let mut data = Vec::new();
++    std::io::Read::read_to_end(&mut f, &mut data).ok()?;
++    Some(data)
++}
++
+ /// Opens a source: the mapped file, or None if tippecanoe would read it as a stream.
+ fn open_source(src: &Source) -> Result<(Option<std::fs::File>, Option<memmap2::Mmap>), Error> {
+     if src.file.is_empty() {
+@@ -441,10 +454,8 @@ fn open_source(src: &Source) -> Result<(Option<std::fs::File>, Option<memmap2::M
  /// Reads every input named in `options` into one store, in input order.
  pub fn read_inputs(options: &Options) -> crate::Result<FeatureStore> {
      let threads = options.thread_count();
@@ -853,6 +873,54 @@ index 29b9d44..a13d8a0 100644
      pool.install(|| read_inputs1(options, threads))
  }
  
+@@ -612,7 +623,13 @@ fn read_inputs1(options: &Options, threads: usize) -> crate::Result<FeatureStore
+             continue;
+         }
+         if format == "fgb" || (name.len() > 4 && name.ends_with(".fgb")) {
+-            let Some(map) = map else {
++            #[cfg(target_os = "wasi")]
++            let unmapped = read_unmapped(&map, file.as_ref());
++            #[cfg(target_os = "wasi")]
++            let data = map.as_deref().or(unmapped.as_deref());
++            #[cfg(not(target_os = "wasi"))]
++            let data = map.as_deref();
++            let Some(data) = data else {
+                 flush(&mut stderr);
+                 return Err(Error::new(
+                     EXIT_MEMORY,
+@@ -627,7 +644,7 @@ fn read_inputs1(options: &Options, threads: usize) -> crate::Result<FeatureStore
+             let layername = sources[layer].layer.clone();
+             read_fgb(
+                 &mut parts,
+-                &map,
++                data,
+                 &cfg,
+                 &reading_name,
+                 &layername,
+@@ -640,7 +657,13 @@ fn read_inputs1(options: &Options, threads: usize) -> crate::Result<FeatureStore
+             continue;
+         }
+         if format == "geobuf" || (name.len() > 7 && name.ends_with(".geobuf")) {
+-            let Some(map) = map else {
++            #[cfg(target_os = "wasi")]
++            let unmapped = read_unmapped(&map, file.as_ref());
++            #[cfg(target_os = "wasi")]
++            let data = map.as_deref().or(unmapped.as_deref());
++            #[cfg(not(target_os = "wasi"))]
++            let data = map.as_deref();
++            let Some(data) = data else {
+                 flush(&mut stderr);
+                 return Err(Error::new(
+                     EXIT_MEMORY,
+@@ -655,7 +678,7 @@ fn read_inputs1(options: &Options, threads: usize) -> crate::Result<FeatureStore
+             let layername = sources[layer].layer.clone();
+             read_geobuf(
+                 &mut parts,
+-                &map,
++                data,
+                 &cfg,
+                 &reading_name,
+                 &layername,
 diff --git a/src/join/mod.rs b/src/join/mod.rs
 index b3344d1..7793527 100644
 --- a/src/join/mod.rs

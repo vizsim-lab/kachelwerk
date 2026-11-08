@@ -4,7 +4,7 @@
 (v0.1.9) mit den drei Patches aus `patches/`, gebaut für `wasm32-wasip1` und mit `llvm-strip`
 ohne Debuginfo.
 
-SHA-256: `35e7afd98db2e8e7df06e6e4390d01a9366daeb39b46e5b792cdc27bf1171e46`
+SHA-256: `624acd9652d654df0a6ead5d536f46d1eaa1a204a532b359f68156dece067fdc`
 
 ## Patches
 
@@ -31,6 +31,8 @@ unverändert, abgesehen vom Bugfix in 0001.
    - GeoParquet wird unter WASI in den Speicher gelesen
    - Namen für temporäre Dateien ohne Prozess-ID: `std::process::id` bricht unter WASI ab. Das
      trifft erst größere Netze, bei denen manby Kacheln auf die (hier virtuelle) Platte auslagert
+   - FlatGeobuf und geobuf, die tippecanoe nur über `mmap` liest, werden unter WASI in den Speicher
+     gelesen
 
 0001 und 0002 taugen als eigene Upstream-PRs.
 

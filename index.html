@@ -209,6 +209,17 @@ body {
 .svn-url input { flex: 1; min-width: 0; padding: 6px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); color: var(--fg); font: 13px/1.3 var(--font-mono); }
 .svn-url input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .btn.small { padding: 7px 12px; font-size: 14px; }
+
+/* segmented controls: the kind of input, the pt filter */
+.seg { display: inline-flex; align-self: flex-start; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+.seg.wide { display: flex; align-self: stretch; }
+.seg.wide button { flex: 1; }
+.seg button { padding: 6px 12px; border: 0; border-radius: 6px; background: none; color: var(--muted); font: 600 14px/1.2 var(--font-display); letter-spacing: 0.03em; cursor: pointer; }
+.seg button:hover { color: var(--fg); }
+.seg button[aria-checked="true"] { background: var(--accent); color: var(--accent-ink); }
+.field .label { font: 600 12.5px/1.2 var(--font-display); letter-spacing: 0.04em; color: var(--muted); }
+.folder-row { margin: -4px 0 0; font-size: 13px; }
+.chooser { display: flex; flex-direction: column; gap: 6px; }
 .credit { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
 .credit a, .foot a { color: inherit; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); text-underline-offset: 2px; }
 .credit a:hover, .foot a:hover { color: var(--fg); text-decoration-color: currentColor; }
@@ -323,8 +334,9 @@ details.log pre {
 .basemap button:hover { color: var(--fg); }
 .basemap button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
 .basemap-err { padding: 0 8px 0 4px; color: var(--danger); font: 500 12px/1.2 var(--font-display); }
-.mapwrap[data-basemap="positron"] { --ramp-0: #c9b98f; --ramp-1: #e2a13d; --ramp-2: #c0522b; --ramp-3: #173f8f; }
-.mapwrap[data-basemap="dark"] { --ramp-0: #4a5a70; --ramp-1: #8f6a33; --ramp-2: #e0952f; --ramp-3: #ffd75a; }
+.mapwrap { --halo: var(--map-bg); }
+.mapwrap[data-basemap="positron"] { --ramp-0: #c9b98f; --ramp-1: #e2a13d; --ramp-2: #c0522b; --ramp-3: #173f8f; --halo: #ffffff; }
+.mapwrap[data-basemap="dark"] { --ramp-0: #4a5a70; --ramp-1: #8f6a33; --ramp-2: #e0952f; --ramp-3: #ffd75a; --halo: #0c0c0c; }
 .busy {
   position: absolute;
   top: calc(12px + env(safe-area-inset-top, 0px));
@@ -380,25 +392,32 @@ details.log pre {
 <div class="app">
   <aside class="panel">
     <div class="plate"><h1>MATSim Kachelwerk</h1><span>manby · WebAssembly · PMTiles</span></div>
-    <p class="lede">Macht aus einem MATSim-Netz Vektorkacheln, komplett im Browser: Nichts verlässt das Gerät.</p>
+    <p class="lede">Macht aus einem MATSim-Netz oder anderen Geodaten Vektorkacheln, komplett im Browser: Nichts verlässt das Gerät.</p>
 
     <section class="step" aria-labelledby="h-net">
-      <h2 id="h-net"><b>1</b>Netz</h2>
+      <h2 id="h-net"><b>1</b><span id="h-net-text">Netz</span></h2>
+      <div class="seg wide" id="mode" role="radiogroup" aria-label="Art der Eingabe">
+        <button type="button" role="radio" value="matsim" aria-checked="true">MATSim-Netz</button>
+        <button type="button" role="radio" value="geo" aria-checked="false">Geodaten</button>
+      </div>
       <label class="drop" id="drop" for="file">
-        <strong>Dateien wählen oder hierher ziehen</strong>
-        <small>MATSim-Netz (<code>network.xml</code>, <code>.xml.gz</code>), dazu gern die Link-Geometrien (<code>…-linkGeometries.csv</code>), oder GeoParquet (<code>.parquet</code>)</small>
-        <input type="file" id="file" multiple accept=".parquet,.xml,.gz,.csv,application/gzip,application/xml,text/xml,text/csv">
+        <strong id="drop-title">Netz wählen oder hierher ziehen</strong>
+        <small id="drop-hint">MATSim-Netz (<code>network.xml</code>, <code>.xml.gz</code>) oder GeoParquet</small>
+        <input type="file" id="file" multiple>
       </label>
+      <p class="folder-row" id="folder-row">
+        <label class="linkbtn">oder einen ganzen Ordner wählen<input type="file" id="folder" class="visually-hidden" webkitdirectory></label>
+      </p>
+      <div class="chooser" id="chooser" hidden>
+        <p class="note" id="chooser-note"></p>
+        <ul class="svn-list" id="chooser-list"></ul>
+      </div>
       <details class="svn" id="svn">
         <summary>Aus dem VSP-SVN laden <small>public-svn, countries/de</small></summary>
         <div class="svn-body">
           <nav class="crumbs" id="svn-crumbs" aria-label="Ordner im SVN"></nav>
           <ul class="svn-list" id="svn-list"></ul>
           <p class="note" id="svn-note" hidden></p>
-          <label class="check" id="svn-geo-row" for="svn-geo" hidden>
-            <input type="checkbox" id="svn-geo" checked>
-            <span>Link-Geometrien mitladen: <code id="svn-geo-name"></code></span>
-          </label>
           <form class="svn-url" id="svn-url-form">
             <input type="text" id="svn-url" placeholder="Pfad oder Adresse" spellcheck="false" autocomplete="off" aria-label="Pfad im SVN oder Adresse einer Datei oder eines Ordners">
             <button class="btn secondary small" type="submit">Öffnen</button>
@@ -440,7 +459,7 @@ details.log pre {
           </select>
         </div>
         <div class="field wide">
-          <small>Gilt, wenn die Datei selbst kein CRS nennt. MATSim-Netze mit dem Attribut <code>coordinateReferenceSystem</code> und GeoParquet mit CRS bringen ihres mit.</small>
+          <small id="crs-hint">Gilt, wenn die Datei selbst kein CRS nennt. MATSim-Netze mit dem Attribut <code>coordinateReferenceSystem</code> und GeoParquet mit CRS bringen ihres mit.</small>
         </div>
         <div class="field">
           <label for="layer">Layername</label>
@@ -463,18 +482,26 @@ details.log pre {
     <section class="step" aria-labelledby="h-result">
       <h2 id="h-result"><b>3</b>Ergebnis</h2>
       <div class="status" id="status" data-state="idle" aria-live="polite">
-        <span class="text" id="status-text">Wartet auf ein Netz.</span>
+        <span class="text" id="status-text">Wartet auf Daten.</span>
         <div class="bar" id="bar" hidden><i></i></div>
       </div>
       <dl class="stats" id="stats" hidden>
         <div><dt>Kacheln</dt><dd id="st-tiles">–</dd></div>
         <div><dt>Zoom</dt><dd id="st-zoom">–</dd></div>
         <div><dt>Größe</dt><dd id="st-size">–</dd></div>
-        <div><dt>Links</dt><dd id="st-features">–</dd></div>
+        <div><dt id="st-features-label">Links</dt><dd id="st-features">–</dd></div>
         <div><dt>Dauer</dt><dd id="st-time">–</dd></div>
         <div><dt>Speicher</dt><dd id="st-mem">–</dd></div>
       </dl>
       <div class="fields" id="style-fields" hidden>
+        <div class="field wide" id="pt-field" hidden>
+          <span class="label" id="pt-label">pt-Links</span>
+          <div class="seg" id="pt" role="radiogroup" aria-labelledby="pt-label">
+            <button type="button" role="radio" value="all" aria-checked="true">Alle</button>
+            <button type="button" role="radio" value="without" aria-checked="false">Ohne pt</button>
+            <button type="button" role="radio" value="only" aria-checked="false">Nur pt</button>
+          </div>
+        </div>
         <div class="field wide">
           <label for="color-by">Farbe nach</label>
           <select id="color-by"></select>
@@ -548,9 +575,37 @@ details.log pre {
     positron: "https://tiles.openfreemap.org/styles/positron",
     dark: "https://tiles.openfreemap.org/styles/dark",
   };
+  const KIND_LABEL = { matsim: "MATSim-XML", parquet: "GeoParquet", geojson: "GeoJSON", fgb: "FlatGeobuf", csv: "CSV" };
+  const KIND_CHIP = { matsim: "Netz", parquet: "GeoParquet", geojson: "GeoJSON", fgb: "FlatGeobuf", csv: "CSV", geometries: "Geometrien" };
+
+  // the two kinds of input; CRS and layer name keep their own values in each
+  const MODES = {
+    matsim: {
+      heading: "Netz",
+      dropTitle: "Netz wählen oder hierher ziehen",
+      dropHint: "MATSim-Netz (<code>network.xml</code>, <code>.xml.gz</code>) oder GeoParquet. Die Link-Geometrien (<code>…-linkGeometries.csv</code>) kommen automatisch mit, wenn sie dabei sind; am einfachsten den ganzen Ordner hineinziehen.",
+      accept: ".xml,.gz,.csv,.parquet,application/gzip,application/xml,text/xml,text/csv",
+      crsHint: "Gilt, wenn die Datei selbst kein CRS nennt. MATSim-Netze mit dem Attribut <code>coordinateReferenceSystem</code> und GeoParquet mit CRS bringen ihres mit.",
+      crsPlaceholder: "",
+      layerPlaceholder: "links",
+      waiting: "Wartet auf ein Netz.",
+    },
+    geo: {
+      heading: "Daten",
+      dropTitle: "Datei wählen oder hierher ziehen",
+      dropHint: "GeoJSON (auch zeilenweise), GeoParquet, FlatGeobuf (<code>.fgb</code>) oder CSV mit <code>lon</code> und <code>lat</code>, auch als <code>.gz</code>",
+      accept: ".geojson,.json,.geojsonl,.geojsons,.ndjson,.parquet,.fgb,.csv,.gz,application/geo+json,application/json,text/csv,application/gzip",
+      crsHint: "Leer lassen für WGS84 (EPSG:4326), wie GeoJSON es vorsieht. GeoParquet bringt sein CRS mit.",
+      crsPlaceholder: "EPSG:4326",
+      layerPlaceholder: "aus dem Dateinamen",
+      waiting: "Wartet auf Daten.",
+    },
+  };
   const DEFAULT_CRS = $("crs").value;
+  const fields = { matsim: { crs: DEFAULT_CRS, layer: $("layer").value }, geo: { crs: "", layer: "" } };
 
   const state = {
+    mode: "matsim",
     source: null, // { id, name, label, kind, bytes, url?, example?, credit? }
     geometry: null, // { id, name, bytes, url? }
     ids: 0,
@@ -562,10 +617,11 @@ details.log pre {
     runs: 0,
     running: false,
     workerKey: null, // the network whose GeoJSON the worker holds
-    result: null, // { key, links, withGeometry } of the last run
+    result: null, // { key, links, withGeometry, ptLinks } of the last run
     overlay: null,
     archiveKey: null,
     basemap: null,
+    pt: "all", // all | without | only
   };
 
   // ---------- map ----------
@@ -606,15 +662,48 @@ details.log pre {
     return expr;
   }
 
-  /** The network layer, under the basemap's labels; again after every change of basemap. */
+  // lines for networks; other data may also bring areas and points
+  const LAYER_IDS = ["net-fill", "net", "net-point"];
+  const IS_AREA = ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]];
+  const IS_POINT = ["in", ["geometry-type"], ["literal", ["Point", "MultiPoint"]]];
+  // a MATSim pt link: the attribute pt from step 1, else (GeoParquet) modes that are just "pt"
+  const IS_PT = ["case", ["has", "pt"], ["to-boolean", ["get", "pt"]], ["==", ["get", "modes"], "pt"]];
+
+  function layerFilter(id) {
+    const base = id === "net-fill" ? IS_AREA : id === "net-point" ? IS_POINT : ["!", IS_POINT];
+    const pt = state.pt === "without" ? ["!", IS_PT] : state.pt === "only" ? IS_PT : null;
+    return pt ? ["all", base, pt] : base;
+  }
+
+  function layerPaint(layer) {
+    const color = colorExpression();
+    if (layer.type === "fill") return { ...layer.paint, "fill-color": color };
+    if (layer.type === "circle") return { ...layer.paint, "circle-color": color, "circle-stroke-color": mapCss("--halo") };
+    return { ...layer.paint, "line-color": color };
+  }
+
+  /** The tiles as layers under the basemap's labels; again after every change of basemap. */
   function placeOverlay() {
     if (!styleReady || !state.overlay) return;
-    if (map.getLayer("net")) map.removeLayer("net");
+    for (const id of LAYER_IDS) if (map.getLayer(id)) map.removeLayer(id);
     if (map.getSource("net")) map.removeSource("net");
     map.addSource("net", state.overlay.source);
     const before = map.getStyle().layers.find((l) => l.type === "symbol")?.id;
-    const layer = state.overlay.layer;
-    map.addLayer({ ...layer, paint: { ...layer.paint, "line-color": colorExpression() } }, before);
+    for (const layer of state.overlay.layers) {
+      map.addLayer({ ...layer, paint: layerPaint(layer), filter: layerFilter(layer.id) }, before);
+    }
+  }
+
+  function repaintOverlay() {
+    if (!state.overlay) return;
+    for (const layer of state.overlay.layers) {
+      if (!map.getLayer(layer.id)) continue;
+      for (const [key, value] of Object.entries(layerPaint(layer))) map.setPaintProperty(layer.id, key, value);
+    }
+  }
+
+  function refilterOverlay() {
+    for (const id of LAYER_IDS) if (map.getLayer(id)) map.setFilter(id, layerFilter(id));
   }
 
   // basemaps from OpenFreeMap; the choice is remembered, otherwise it follows the page theme
@@ -674,7 +763,7 @@ details.log pre {
   function applyTheme() {
     if (!basemapChoice && state.basemap !== autoBasemap()) return setBasemap(autoBasemap());
     if (map.getLayer("bg")) map.setPaintProperty("bg", "background-color", css("--map-bg"));
-    if (map.getLayer("net")) map.setPaintProperty("net", "line-color", colorExpression());
+    repaintOverlay();
     renderLegend();
   }
   darkScheme.addEventListener("change", applyTheme);
@@ -693,6 +782,7 @@ details.log pre {
   function numericAttributes(meta, layer) {
     const layers = meta?.tilestats?.layers ?? [];
     const l = layers.find((x) => x.layer === layer) ?? layers[0];
+    const names = new Set((l?.attributes ?? []).map((x) => x.attribute));
     const attrs = (l?.attributes ?? [])
       .filter((x) => x.type === "number" && Number.isFinite(x.min) && Number.isFinite(x.max))
       .map((x) => {
@@ -703,7 +793,7 @@ details.log pre {
       const ip = PREFERRED.indexOf(p.attribute), iq = PREFERRED.indexOf(q.attribute);
       return (ip < 0 ? 99 : ip) - (iq < 0 ? 99 : iq) || p.attribute.localeCompare(q.attribute);
     });
-    return { attrs, count: l?.count };
+    return { attrs, count: l?.count, names };
   }
 
   function renderLegend() {
@@ -722,6 +812,23 @@ details.log pre {
     }));
   }
 
+  /** The pt filter, offered when the network has pt links. */
+  function renderPt(info, names) {
+    const offered = state.source?.kind === "matsim" ? (info?.ptLinks ?? 0) > 0 : names?.has("pt") || names?.has("modes");
+    $("pt-field").hidden = !offered;
+    if (!offered) state.pt = "all";
+    $("pt-label").textContent = info?.ptLinks ? `pt-Links (${de(info.ptLinks)} von ${de(info.links)})` : "pt-Links";
+    for (const b of $("pt").querySelectorAll("button")) b.setAttribute("aria-checked", String(b.value === state.pt));
+  }
+  $("pt").addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    state.pt = b.value;
+    for (const x of $("pt").querySelectorAll("button")) x.setAttribute("aria-checked", String(x.value === state.pt));
+    refilterOverlay();
+    if (state.source?.url && !state.source.example) updateLink();
+  });
+
   async function show(bytes, info) {
     await mapReady;
     state.runs += 1;
@@ -730,30 +837,40 @@ details.log pre {
     protocol.add(archive);
     const header = await archive.getHeader();
     const meta = (await archive.getMetadata()) ?? {};
-    const { attrs, count } = numericAttributes(meta, state.layer);
+    const { attrs, count, names } = numericAttributes(meta, state.layer);
     state.attrs = attrs;
     state.attr = attrs[0] ?? null;
+    renderPt(info, names);
 
+    const common = { source: "net", "source-layer": meta.vector_layers?.[0]?.id ?? state.layer };
     state.overlay = {
       source: {
         type: "vector",
         url: `pmtiles://${archive.source.getKey()}`,
         ...(state.source?.credit ? { attribution: state.source.credit } : {}),
       },
-      layer: {
-        id: "net",
-        type: "line",
-        source: "net",
-        "source-layer": meta.vector_layers?.[0]?.id ?? state.layer,
-        layout: { "line-cap": "round", "line-join": "round" },
-        paint: { "line-width": ["interpolate", ["exponential", 1.6], ["zoom"], 6, 0.35, 10, 0.9, 13, 1.9, 16, 4.5] },
-      },
+      layers: [
+        { id: "net-fill", type: "fill", ...common, paint: { "fill-opacity": 0.45 } },
+        {
+          id: "net",
+          type: "line",
+          ...common,
+          layout: { "line-cap": "round", "line-join": "round" },
+          paint: { "line-width": ["interpolate", ["exponential", 1.6], ["zoom"], 6, 0.35, 10, 0.9, 13, 1.9, 16, 4.5] },
+        },
+        {
+          id: "net-point",
+          type: "circle",
+          ...common,
+          paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 1.8, 10, 3.2, 15, 6], "circle-stroke-width": 0.8 },
+        },
+      ],
     };
     placeOverlay();
     // the previous archive is no longer shown; let its bytes go
     if (state.archiveKey) protocol.tiles?.delete?.(state.archiveKey);
     state.archiveKey = archive.source.getKey();
-    map.fitBounds([[header.minLon, header.minLat], [header.maxLon, header.maxLat]], { padding: 36, duration: 0 });
+    map.fitBounds([[header.minLon, header.minLat], [header.maxLon, header.maxLat]], { padding: 36, duration: 0, maxZoom: 16 });
 
     const select = $("color-by");
     select.replaceChildren(...attrs.map((a) => new Option(a.attribute + (UNITS[a.attribute] ? ` (${UNITS[a.attribute]})` : ""), a.attribute)));
@@ -765,6 +882,7 @@ details.log pre {
     $("st-tiles").textContent = de(header.numAddressedTiles);
     $("st-zoom").textContent = `${header.minZoom}–${header.maxZoom}`;
     $("st-size").textContent = mb(bytes.length);
+    $("st-features-label").textContent = state.source?.kind === "matsim" ? "Links" : "Features";
     $("st-features").textContent = info.links != null ? de(info.links) : count != null ? de(count) : "–";
     $("st-time").textContent = `${de((info.msStep1 + info.msTiling) / 1000, 1)} s`;
     $("st-mem").textContent = mb(info.memory);
@@ -773,15 +891,16 @@ details.log pre {
 
   $("color-by").addEventListener("change", (e) => {
     state.attr = state.attrs.find((a) => a.attribute === e.target.value) ?? null;
-    if (map.getLayer("net")) map.setPaintProperty("net", "line-color", colorExpression());
+    repaintOverlay();
     renderLegend();
   });
 
   const popup = new maplibregl.Popup({ closeButton: true, maxWidth: "300px" });
   map.on("click", (e) => {
-    if (!map.getLayer("net")) return;
+    const layers = LAYER_IDS.filter((id) => map.getLayer(id));
+    if (!layers.length) return;
     const box = [[e.point.x - 5, e.point.y - 5], [e.point.x + 5, e.point.y + 5]];
-    const f = map.queryRenderedFeatures(box, { layers: ["net"] })[0];
+    const f = map.queryRenderedFeatures(box, { layers })[0];
     if (!f) return popup.remove();
     const table = document.createElement("table");
     table.className = "props";
@@ -795,8 +914,10 @@ details.log pre {
     }
     popup.setLngLat(e.lngLat).setDOMContent(table).addTo(map);
   });
-  map.on("mousemove", "net", () => (map.getCanvas().style.cursor = "pointer"));
-  map.on("mouseleave", "net", () => (map.getCanvas().style.cursor = ""));
+  for (const id of LAYER_IDS) {
+    map.on("mousemove", id, () => (map.getCanvas().style.cursor = "pointer"));
+    map.on("mouseleave", id, () => (map.getCanvas().style.cursor = ""));
+  }
 
   // ---------- worker ----------
   const logEl = $("log");
@@ -835,7 +956,7 @@ details.log pre {
       else if (m.type === "done") {
         state.bytes = m.pmtiles;
         state.workerKey = m.info.key ?? null;
-        state.result = { key: m.info.key, links: m.info.links, withGeometry: m.info.withGeometry };
+        state.result = { key: m.info.key, links: m.info.links, withGeometry: m.info.withGeometry, ptLinks: m.info.ptLinks };
         try {
           await show(m.pmtiles, m.info);
           setStatus(doneText(m.info), "done");
@@ -874,7 +995,7 @@ details.log pre {
   function run() {
     if (!state.source) return;
     if (state.running) {
-      // a new network or new geometries replace the job that is still running
+      // a new file or new geometries replace the job that is still running
       worker?.terminate();
       worker = null;
       state.workerKey = null;
@@ -887,7 +1008,7 @@ details.log pre {
     logEl.textContent = "";
     setStatus("Startet …");
     if (state.source.url && !state.source.example) updateLink();
-    const layer = $("layer").value.trim() || "links";
+    const layer = $("layer").value.trim() || (state.source.kind === "matsim" ? "links" : state.name);
     state.layer = layer;
     const extra = $("extra").value.trim();
     // the worker keeps step 1 of the last network, so a second run needs no bytes
@@ -910,25 +1031,98 @@ details.log pre {
   }
   $("run").addEventListener("click", run);
 
-  // ---------- input ----------
-  const GEO_FILE = /linkGeometr|\.csv(\.gz)?$/i;
-  const stem = (name) => name.replace(/\.(xml\.gz|xml|gz|parquet)$/i, "");
+  // ---------- kind of input ----------
+  function setMode(mode, { remember = true } = {}) {
+    if (!MODES[mode]) mode = "matsim";
+    if (mode !== state.mode) {
+      fields[state.mode] = { crs: $("crs").value, layer: $("layer").value };
+      $("crs").value = fields[mode].crs;
+      $("layer").value = fields[mode].layer;
+    }
+    state.mode = mode;
+    const m = MODES[mode];
+    for (const b of $("mode").querySelectorAll("button")) b.setAttribute("aria-checked", String(b.value === mode));
+    $("h-net-text").textContent = m.heading;
+    $("drop-title").textContent = m.dropTitle;
+    $("drop-hint").innerHTML = m.dropHint;
+    $("file").accept = m.accept;
+    $("crs-hint").innerHTML = m.crsHint;
+    $("crs").placeholder = m.crsPlaceholder;
+    $("layer").placeholder = m.layerPlaceholder;
+    $("folder-row").hidden = mode !== "matsim";
+    $("chooser").hidden = true;
+    if (!state.source && $("status").dataset.state === "idle") $("status-text").textContent = m.waiting;
+    if (svn.url) renderSvn();
+    if (remember) store.set("kachelwerk.mode", mode);
+  }
+  $("mode").addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (b) setMode(b.value);
+  });
+
+  // ---------- files ----------
+  const stem = (name) => name.replace(/\.gz$/i, "").replace(/\.[a-z]+$/i, "");
   const fileName = (url) => {
     const last = new URL(url).pathname.split("/").filter(Boolean).pop() ?? "netz";
     try { return decodeURIComponent(last); } catch { return last; }
   };
   const folderOf = (url) => new URL("./", url).href;
+  const dirOf = (path) => path.slice(0, path.lastIndexOf("/") + 1);
   const reason = (err) =>
     err instanceof TypeError
       ? "keine Verbindung, oder der Server erlaubt den Abruf aus dem Browser nicht"
       : err?.message ?? String(err);
+  const isGzip = (b) => b[0] === 0x1f && b[1] === 0x8b;
 
-  function detectKind(name, bytes) {
-    const head = new TextDecoder().decode(bytes.subarray(0, 512));
-    if (head.startsWith("PAR1")) return "parquet";
-    if ((bytes[0] === 0x1f && bytes[1] === 0x8b) || /<network|<\?xml/.test(head)) return "matsim";
-    if (/\.parquet$/i.test(name)) return "parquet";
-    if (/\.xml(\.gz)?$/i.test(name)) return "matsim";
+  /** What a file is by its name alone; for folders and listings. */
+  function nameKind(name, mode = state.mode) {
+    const n = name.toLowerCase();
+    if (/linkgeometr[^/]*\.csv(\.gz)?$/.test(n)) return mode === "matsim" ? "geometries" : null;
+    if (/\.parquet$/.test(n)) return "parquet";
+    if (mode === "matsim") return /\.xml(\.gz)?$/.test(n) && /network/.test(n) && !/lanes|change/.test(n) ? "matsim" : null;
+    if (/\.(geojson|geojsonl|geojsons|ndjson)(\.gz)?$/.test(n)) return "geojson";
+    if (/\.fgb$/.test(n)) return "fgb";
+    if (/\.csv(\.gz)?$/.test(n)) return "csv";
+    return null;
+  }
+
+  /** The first characters of a file, unpacked if it is gzipped. */
+  async function headText(bytes, length = 4096) {
+    if (!isGzip(bytes)) return new TextDecoder().decode(bytes.subarray(0, length));
+    const reader = new Blob([bytes.subarray(0, 1 << 16)]).stream().pipeThrough(new DecompressionStream("gzip")).getReader();
+    const parts = [];
+    let got = 0;
+    try {
+      while (got < length) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        parts.push(value);
+        got += value.length;
+      }
+    } catch { /* the cut-off stream ends in an error; what came is enough */ }
+    reader.cancel().catch(() => {});
+    const out = new Uint8Array(got);
+    let at = 0;
+    for (const p of parts) {
+      out.set(p, at);
+      at += p.length;
+    }
+    return new TextDecoder().decode(out.subarray(0, length));
+  }
+
+  /** What a file is, by its content first and its name second. */
+  async function sniff(name, bytes) {
+    const n = name.toLowerCase().replace(/\.gz$/, "");
+    if (new TextDecoder().decode(bytes.subarray(0, 4)) === "PAR1") return "parquet";
+    if (bytes[0] === 0x66 && bytes[1] === 0x67 && bytes[2] === 0x62) return "fgb";
+    const head = await headText(bytes);
+    if (/linkgeometr/i.test(n) || /^\s*"?link_?id"?\s*[,;\t]\s*"?geom/i.test(head)) return "geometries";
+    if (/<network[\s>]/.test(head)) return "matsim";
+    if (/^[\s\x1e]*[{[]/.test(head)) return "geojson";
+    if (/\.parquet$/.test(n)) return "parquet";
+    if (/\.fgb$/.test(n)) return "fgb";
+    if (/\.csv$/.test(n)) return "csv";
+    if (/\.xml$/.test(n)) return "matsim";
     return null;
   }
 
@@ -943,6 +1137,9 @@ details.log pre {
     state.source = { ...src, id: ++state.ids };
     state.geometry = null;
     state.name = stem(src.name).replace(/[^\w.-]+/g, "_") || "netz";
+    // a network belongs to the MATSim side, GeoJSON, FlatGeobuf and CSV to the other one
+    if (src.kind === "matsim") setMode("matsim", { remember: false });
+    else if (src.kind !== "parquet") setMode("geo", { remember: false });
     renderSource();
   }
 
@@ -971,7 +1168,7 @@ details.log pre {
     const size = document.createElement("span");
     size.className = "note";
     size.textContent = mb(src.bytes.length);
-    box.append(name, chip(src.kind === "parquet" ? "GeoParquet" : "MATSim-XML"), size);
+    box.append(name, chip(KIND_LABEL[src.kind] ?? src.kind), size);
     if (src.url?.startsWith(SVN_ROOT)) box.append(chip("VSP-SVN"));
     if (src.example) box.append(chip("Beispiel", "example"));
     if (src.url && !src.example) {
@@ -1000,8 +1197,12 @@ details.log pre {
       text.append("Link-Geometrien: ", strong, ` (${mb(g.bytes.length)})`);
       const r = state.result;
       if (r && r.key === runKey() && r.withGeometry != null) text.append(` · ${de(r.withGeometry)} von ${de(r.links)} Links`);
-    } else {
+    } else if (src.url && !src.example) {
+      text.append("Keine Link-Geometrien gefunden, die Links sind gerade Linien.");
+    } else if (src.url) {
       text.append("Links als gerade Linien zwischen den Knoten.");
+    } else {
+      text.append("Links als gerade Linien. Mit dem ganzen Ordner oder der …-linkGeometries.csv dazu kommen die Geometrien automatisch mit.");
     }
     $("geo-pick").firstChild.textContent = g ? "andere Datei" : "Geometrie-Datei wählen";
     $("geo-clear").hidden = !g;
@@ -1010,43 +1211,147 @@ details.log pre {
 
   let loading = null; // the download in progress, if any
 
-  async function takeFiles(list) {
-    const files = [...(list ?? [])];
-    if (!files.length) return;
-    const geoFile = files.find((f) => GEO_FILE.test(f.name));
-    const netFile = files.find((f) => f !== geoFile);
-    if (!netFile) return takeGeometryFile(geoFile);
+  function useFile(name, kind, bytes, geometry) {
     loading?.abort();
     loading = null;
-    const bytes = new Uint8Array(await netFile.arrayBuffer());
-    const kind = detectKind(netFile.name, bytes);
-    if (!kind) {
-      setStatus(`${netFile.name} ist weder GeoParquet noch ein MATSim-Netz.`, "error");
-      return;
-    }
-    setSource({ name: netFile.name, label: netFile.name, kind, bytes });
-    if (geoFile && kind === "matsim") setGeometry({ name: geoFile.name, bytes: new Uint8Array(await geoFile.arrayBuffer()) });
+    $("chooser").hidden = true;
+    setSource({ name, label: name, kind, bytes });
+    if (geometry) setGeometry(geometry);
     clearLink();
     run();
   }
 
-  async function takeGeometryFile(file) {
-    if (!file) return;
+  function attachGeometry(g) {
     if (state.source?.kind !== "matsim") {
       setStatus("Link-Geometrien gehören zu einem MATSim-Netz. Lade zuerst das Netz.", "error");
       return;
     }
-    setGeometry({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) });
+    setGeometry(g);
     run();
   }
+
+  /** The geometry file for a network: in its own folder the one sharing the most of its name; elsewhere only one of the same scenario. */
+  function bestGeometry(netName, geos, { strict = false } = {}) {
+    let best = null;
+    let bestLength = -1;
+    for (const g of geos) {
+      if (strict) {
+        const base = g.name.split(/network|linkgeometr/i)[0];
+        if (base.length < 3 || !netName.startsWith(base)) continue;
+      }
+      let n = 0;
+      while (n < netName.length && netName[n] === g.name[n]) n++;
+      if (n > bestLength) [best, bestLength] = [g, n];
+    }
+    return best;
+  }
+
+  /** Files from a selection or a folder: { path, name, file }. */
+  async function takeItems(items, { folder = false } = {}) {
+    if (!items.length) return;
+    $("chooser").hidden = true;
+    if (items.length === 1 && !folder) {
+      const it = items[0];
+      const bytes = new Uint8Array(await it.file.arrayBuffer());
+      const kind = await sniff(it.name, bytes);
+      if (kind === "geometries") return attachGeometry({ name: it.name, bytes });
+      if (!kind) return setStatus(`${it.name}: Dieses Format kann die Seite nicht lesen.`, "error");
+      return useFile(it.name, kind, bytes, null);
+    }
+    const geos = items.filter((i) => nameKind(i.name, "matsim") === "geometries");
+    let mains = items.filter((i) => !geos.includes(i) && nameKind(i.name));
+    if (!mains.length && !folder) mains = items.filter((i) => !geos.includes(i));
+    if (!mains.length) {
+      if (geos.length && !folder) return takeItems([geos[0]]);
+      setStatus(`Im Ordner liegt ${state.mode === "matsim" ? "kein MATSim-Netz" : "keine Datei, die die Seite lesen kann"}.`, "error");
+      return;
+    }
+    if (mains.length === 1) return chooseFile(mains[0], geos);
+    showChooser(mains, geos);
+  }
+
+  async function chooseFile(item, geos) {
+    $("chooser").hidden = true;
+    const bytes = new Uint8Array(await item.file.arrayBuffer());
+    const kind = await sniff(item.name, bytes);
+    if (!kind || kind === "geometries") return setStatus(`${item.name}: Dieses Format kann die Seite nicht lesen.`, "error");
+    let geometry = null;
+    if (kind === "matsim" && geos.length) {
+      const g = bestGeometry(item.name, geos.filter((x) => dirOf(x.path) === dirOf(item.path))) ?? bestGeometry(item.name, geos, { strict: true });
+      if (g) geometry = { name: g.name, bytes: new Uint8Array(await g.file.arrayBuffer()) };
+    }
+    useFile(item.name, kind, bytes, geometry);
+  }
+
+  function showChooser(mains, geos) {
+    const networks = state.mode === "matsim";
+    $("chooser-note").textContent = `Im Ordner liegen ${mains.length} ${networks ? "Netze. Welches" : "Dateien. Welche"} soll es sein?`;
+    const natural = new Intl.Collator("de", { numeric: true, sensitivity: "base" });
+    $("chooser-list").replaceChildren(...[...mains].sort((a, b) => natural.compare(a.path, b.path)).map((m) => {
+      const li = document.createElement("li");
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "file";
+      const n = document.createElement("span");
+      n.className = "n";
+      n.textContent = m.path;
+      b.append(n);
+      const k = nameKind(m.name);
+      if (KIND_CHIP[k]) b.append(chip(KIND_CHIP[k]));
+      b.addEventListener("click", () => chooseFile(m, geos));
+      li.append(b);
+      return li;
+    }));
+    $("chooser").hidden = false;
+    setStatus(networks ? "Bitte ein Netz aus dem Ordner wählen." : "Bitte eine Datei aus dem Ordner wählen.", "idle");
+  }
+
+  /** The files below dropped folders, as far as they could be read; other files are only listed by name. */
+  async function collectEntries(entries) {
+    const items = [];
+    const fileOf = (entry) => new Promise((resolve, reject) => entry.file(resolve, reject));
+    const children = async (dir) => {
+      const reader = dir.createReader();
+      const all = [];
+      for (;;) {
+        const batch = await new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+        if (!batch.length) return all;
+        all.push(...batch);
+      }
+    };
+    async function walk(entry, prefix, depth) {
+      if (entry.isFile) {
+        if (nameKind(entry.name, "matsim") === "geometries" || nameKind(entry.name)) {
+          items.push({ path: prefix + entry.name, name: entry.name, file: await fileOf(entry) });
+        }
+        return;
+      }
+      if (depth >= 4) return;
+      for (const child of await children(entry)) await walk(child, `${prefix}${entry.name}/`, depth + 1);
+    }
+    setStatus("Ordner durchsuchen …");
+    for (const e of entries) await walk(e, "", 0);
+    return items;
+  }
+
+  const takeFiles = (list) => {
+    const files = [...(list ?? [])];
+    const items = files.map((file) => ({ path: file.webkitRelativePath || file.name, name: file.name, file }));
+    return takeItems(items, { folder: items.some((i) => i.path.includes("/")) });
+  };
 
   $("file").addEventListener("change", (e) => {
     takeFiles(e.target.files);
     e.target.value = "";
   });
-  $("geo-file").addEventListener("change", (e) => {
-    takeGeometryFile(e.target.files[0]);
+  $("folder").addEventListener("change", (e) => {
+    takeFiles(e.target.files);
     e.target.value = "";
+  });
+  $("geo-file").addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (file) attachGeometry({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) });
   });
   $("geo-clear").addEventListener("click", () => {
     setGeometry(null);
@@ -1058,7 +1363,10 @@ details.log pre {
   drop.addEventListener("drop", (e) => {
     e.preventDefault();
     drop.classList.remove("over");
-    takeFiles(e.dataTransfer.files);
+    // the entries have to be taken while the event lasts
+    const entries = [...e.dataTransfer.items].filter((i) => i.kind === "file").map((i) => i.webkitGetAsEntry?.()).filter(Boolean);
+    if (entries.some((en) => en.isDirectory)) collectEntries(entries).then((items) => takeItems(items, { folder: true }));
+    else takeFiles(e.dataTransfer.files);
   });
 
   // ---------- loading from the web ----------
@@ -1092,19 +1400,22 @@ details.log pre {
     return bytes;
   }
 
-  /** Loads a network (and its link geometries, "auto" looks for them next to it) and tiles it. */
+  /** Loads a file from the web and tiles it; for a network "auto" fetches the link geometries that belong to it. */
   async function loadFromUrl({ net, geo = null, example = false }) {
     loading?.abort();
     const ctrl = (loading = new AbortController());
     const name = example ? "kelheim" : fileName(net);
     try {
       if (geo === "auto") {
-        setStatus("Link-Geometrien neben dem Netz suchen …");
-        geo = (await findGeometry(net))?.url ?? null;
+        geo = null;
+        if (/\.xml(\.gz)?$/i.test(name)) {
+          setStatus("Link-Geometrien suchen …");
+          geo = (await findGeometry(net))?.url ?? null;
+        }
       }
       const bytes = await fetchBytes(net, example ? "Beispielnetz von GitHub" : name, ctrl.signal);
-      const kind = detectKind(name, bytes);
-      if (!kind) throw new Error(`${name} ist weder GeoParquet noch ein MATSim-Netz`);
+      const kind = await sniff(example ? "kelheim.xml.gz" : name, bytes);
+      if (!kind || kind === "geometries") throw new Error("Dieses Format kann die Seite nicht lesen");
       let geometry = null;
       if (geo && kind === "matsim") {
         const gname = fileName(geo);
@@ -1128,7 +1439,7 @@ details.log pre {
       if (ctrl.signal.aborted) return;
       loading = null;
       const what = example ? "Das Beispielnetz" : name;
-      setStatus(`${what} ließ sich nicht laden (${reason(err)}).${state.source ? "" : " Lade ein eigenes Netz."}`, "error");
+      setStatus(`${what} ließ sich nicht laden (${reason(err)}).${state.source ? "" : " Lade eine eigene Datei."}`, "error");
     }
   }
 
@@ -1152,64 +1463,63 @@ details.log pre {
   const sourceCredit = (url) => {
     const svn = url.startsWith(SVN_ROOT);
     const href = svn ? folderOf(url) : url;
-    return `Netz: <a href="${esc(href)}" target="_blank" rel="noopener">${svn ? "VSP public-svn" : esc(new URL(url).host)}</a>`;
+    return `${state.mode === "matsim" ? "Netz" : "Daten"}: <a href="${esc(href)}" target="_blank" rel="noopener">${svn ? "VSP public-svn" : esc(new URL(url).host)}</a>`;
   };
 
   // ---------- VSP-SVN ----------
   const svn = { url: null, entries: [], token: 0, start: null };
-  const KIND_LABEL = { net: "Netz", parquet: "GeoParquet", geo: "Geometrien" };
-  const natural = new Intl.Collator("de", { numeric: true, sensitivity: "base" });
+  const listings = new Map();
 
-  function classify(name) {
-    if (/linkGeometr[^/]*\.csv(\.gz)?$/i.test(name)) return "geo";
-    if (/\.parquet$/i.test(name)) return "parquet";
-    if (/\.xml(\.gz)?$/i.test(name) && /network/i.test(name) && !/lanes|change/i.test(name)) return "net";
-    return null;
+  /** Entries of a folder (Apache's SVN listing, or the XML index some servers send), each fetched once. */
+  function listFolder(url) {
+    if (!listings.has(url)) {
+      const p = (async () => {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const doc = new DOMParser().parseFromString(await res.text(), "text/html");
+        const hrefs = [...doc.querySelectorAll("li > a[href]")].map((a) => a.getAttribute("href"));
+        for (const el of doc.querySelectorAll("index > dir[href], index > file[href]")) {
+          const href = el.getAttribute("href");
+          hrefs.push(el.localName === "dir" && !href.endsWith("/") ? `${href}/` : href);
+        }
+        const entries = [];
+        for (const href of hrefs) {
+          let abs;
+          try { abs = new URL(href, url).href; } catch { continue; }
+          if (!abs.startsWith(url) || abs === url) continue; // only what lies inside this folder
+          let name = abs.slice(url.length).replace(/\/$/, "");
+          try { name = decodeURIComponent(name); } catch { /* keep it encoded */ }
+          if (!name || name.includes("/")) continue;
+          entries.push({ name, url: abs, dir: abs.endsWith("/") });
+        }
+        const natural = new Intl.Collator("de", { numeric: true, sensitivity: "base" });
+        return entries.sort((a, b) => b.dir - a.dir || natural.compare(a.name, b.name));
+      })();
+      listings.set(url, p);
+      p.catch(() => listings.delete(url));
+    }
+    return listings.get(url);
   }
 
-  /** Entries of an SVN folder (Apache's HTML listing, or the XML index some servers send). */
-  async function listFolder(url) {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const doc = new DOMParser().parseFromString(await res.text(), "text/html");
-    const hrefs = [...doc.querySelectorAll("li > a[href]")].map((a) => a.getAttribute("href"));
-    for (const el of doc.querySelectorAll("index > dir[href], index > file[href]")) {
-      const href = el.getAttribute("href");
-      hrefs.push(el.localName === "dir" && !href.endsWith("/") ? `${href}/` : href);
-    }
-    const entries = [];
-    for (const href of hrefs) {
-      let abs;
-      try { abs = new URL(href, url).href; } catch { continue; }
-      if (!abs.startsWith(url) || abs === url) continue; // only what lies inside this folder
-      let name = abs.slice(url.length).replace(/\/$/, "");
-      try { name = decodeURIComponent(name); } catch { /* keep it encoded */ }
-      if (!name || name.includes("/")) continue;
-      const dir = abs.endsWith("/");
-      entries.push({ name, url: abs, dir, kind: dir ? "dir" : classify(name) });
-    }
-    return entries.sort((a, b) => b.dir - a.dir || natural.compare(a.name, b.name));
-  }
+  const isGeometryEntry = (e) => !e.dir && nameKind(e.name, "matsim") === "geometries";
 
-  /** The geometry file that belongs to a network: the one whose name shares the most with it. */
-  function matchGeometry(netName, entries) {
-    let best = null;
-    let bestLength = -1;
-    for (const e of entries) {
-      if (e.kind !== "geo") continue;
-      let n = 0;
-      while (n < netName.length && netName[n] === e.name[n]) n++;
-      if (n > bestLength) [best, bestLength] = [e, n];
-    }
-    return best;
-  }
-
+  /** The link geometries of a network: next to it, or for an output network in the scenario's input folder. */
   async function findGeometry(netUrl) {
-    try {
-      return matchGeometry(fileName(netUrl), await listFolder(folderOf(netUrl)));
-    } catch {
-      return null;
+    const name = fileName(netUrl);
+    let folder = folderOf(netUrl);
+    const here = await listFolder(folder).catch(() => []);
+    const near = bestGeometry(name, here.filter(isGeometryEntry));
+    if (near) return near;
+    for (let up = 0; up < 3 && folder !== SVN_ROOT; up++) {
+      const parent = new URL("../", folder).href;
+      if (parent === folder) break;
+      folder = parent;
+      const input = (await listFolder(folder).catch(() => [])).find((e) => e.dir && e.name === "input");
+      if (!input) continue;
+      const g = bestGeometry(name, (await listFolder(input.url).catch(() => [])).filter(isGeometryEntry), { strict: true });
+      if (g) return g;
     }
+    return null;
   }
 
   function svnNote(text) {
@@ -1262,24 +1572,28 @@ details.log pre {
     $("svn-crumbs").replaceChildren(...crumbs);
 
     const items = [];
-    const item = (e) => {
+    const item = (e, kind) => {
       const li = document.createElement("li");
       const b = document.createElement("button");
       b.type = "button";
       b.className = e.dir ? "dir" : "file";
-      Object.assign(b.dataset, { url: e.url, kind: e.kind });
+      Object.assign(b.dataset, { url: e.url, kind });
       const n = document.createElement("span");
       n.className = "n";
       n.textContent = e.dir && e.name !== ".." ? `${e.name}/` : e.name;
       b.append(n);
-      if (KIND_LABEL[e.kind]) b.append(chip(KIND_LABEL[e.kind]));
+      if (KIND_CHIP[kind]) b.append(chip(KIND_CHIP[kind]));
       li.append(b);
       return li;
     };
-    if (svn.url !== base) items.push(item({ name: "..", url: new URL("../", svn.url).href, dir: true, kind: "dir" }));
+    if (svn.url !== base) items.push(item({ name: "..", url: new URL("../", svn.url).href, dir: true }, "dir"));
     let hidden = 0;
+    let geometries = 0;
     for (const e of svn.entries) {
-      if (e.dir || e.kind) items.push(item(e));
+      // the listing offers what fits the kind of input; CSV tables there are rarely geodata
+      const kind = e.dir ? "dir" : nameKind(e.name) === "csv" ? null : nameKind(e.name);
+      if (kind === "geometries") geometries++;
+      if (kind) items.push(item(e, kind));
       else hidden++;
     }
     if (items.length === 0) {
@@ -1290,10 +1604,10 @@ details.log pre {
     }
     $("svn-list").replaceChildren(...items);
     $("svn-list").scrollTop = 0;
-    svnNote(hidden ? `${de(hidden)} weitere Datei${hidden === 1 ? "" : "en"} ohne Netz ausgeblendet.` : null);
-    const geos = svn.entries.filter((e) => e.kind === "geo");
-    $("svn-geo-row").hidden = geos.length === 0;
-    $("svn-geo-name").textContent = geos.length === 1 ? geos[0].name : "die passende Datei aus diesem Ordner";
+    const notes = [];
+    if (geometries) notes.push("Die Link-Geometrien kommen mit dem Netz automatisch mit.");
+    if (hidden) notes.push(`${de(hidden)} weitere Datei${hidden === 1 ? "" : "en"} ausgeblendet.`);
+    svnNote(notes.join(" ") || null);
   }
 
   $("svn").addEventListener("toggle", () => {
@@ -1308,13 +1622,11 @@ details.log pre {
     if (!b) return;
     const { url, kind } = b.dataset;
     if (kind === "dir") return openFolder(url);
-    if (kind === "geo") {
+    if (kind === "geometries") {
       if (state.source?.kind !== "matsim") return svnNote("Link-Geometrien gehören zu einem MATSim-Netz. Wähle zuerst das Netz.");
       return loadGeometryFromUrl(url);
     }
-    const entry = svn.entries.find((x) => x.url === url);
-    const geo = kind === "net" && $("svn-geo").checked ? matchGeometry(entry.name, svn.entries) : null;
-    loadFromUrl({ net: url, geo: geo?.url ?? null });
+    loadFromUrl({ net: url, geo: kind === "matsim" ? "auto" : null });
   });
   $("svn-url-form").addEventListener("submit", (e) => {
     e.preventDefault();
@@ -1330,18 +1642,39 @@ details.log pre {
     else loadFromUrl({ net: url, geo: "auto" });
   });
 
-  // ---------- links to a network ----------
-  // ?net=<path below countries/de/ or a full address>&geo=<file next to it, a full address, or 0>&crs=…
+  // ---------- links ----------
+  // MATSim: ?net=<path below countries/de/ or address>&geo=<path from the network's folder, address or 0>&pt=ohne|nur&crs=…
+  // other data: ?data=<path or address>&crs=…
+  function relativeTo(folder, url) {
+    if (url.startsWith(folder)) return url.slice(folder.length);
+    const a = new URL(folder);
+    const b = new URL(url);
+    if (a.origin !== b.origin) return url;
+    const from = a.pathname.split("/").slice(0, -1);
+    const to = b.pathname.split("/");
+    let i = 0;
+    while (i < from.length && i < to.length - 1 && from[i] === to[i]) i++;
+    return "../".repeat(from.length - i) + to.slice(i).join("/");
+  }
+
   function updateLink() {
     const src = state.source;
     if (!src?.url || src.example) return clearLink();
     const p = new URLSearchParams();
-    p.set("net", src.url.startsWith(SVN_ROOT) ? src.url.slice(SVN_ROOT.length) : src.url);
-    const g = state.geometry;
-    if (!g) p.set("geo", "0");
-    else if (g.url) p.set("geo", g.url.startsWith(folderOf(src.url)) ? g.url.slice(folderOf(src.url).length) : g.url);
+    const short = src.url.startsWith(SVN_ROOT) ? src.url.slice(SVN_ROOT.length) : src.url;
+    if (src.kind === "matsim" || (src.kind === "parquet" && state.mode === "matsim")) {
+      p.set("net", short);
+      const g = state.geometry;
+      if (src.kind === "matsim") {
+        if (!g) p.set("geo", "0");
+        else if (g.url) p.set("geo", relativeTo(folderOf(src.url), g.url));
+      }
+      if (state.pt !== "all") p.set("pt", state.pt === "without" ? "ohne" : "nur");
+    } else {
+      p.set("data", short);
+    }
     const crs = $("crs").value.trim();
-    if (crs && crs !== DEFAULT_CRS) p.set("crs", crs);
+    if (crs && crs !== (state.mode === "matsim" ? DEFAULT_CRS : "")) p.set("crs", crs);
     history.replaceState(null, "", `${location.pathname}?${p.toString().replaceAll("%2F", "/")}`);
   }
   function clearLink() {
@@ -1431,24 +1764,32 @@ details.log pre {
     }
   });
 
-  // ---------- start: the network from the link, else the example ----------
+  // ---------- start: the file from the link, else the example (MATSim) or nothing (other data) ----------
   const params = new URLSearchParams(location.search);
+  const resolve = (value) => {
+    try { return value ? new URL(value, SVN_ROOT).href : null; } catch { return null; }
+  };
+  const linkedNet = resolve(params.get("net"));
+  const linkedData = resolve(params.get("data"));
+  state.pt = { ohne: "without", nur: "only" }[params.get("pt")] ?? "all";
+  setMode(linkedData ? "geo" : linkedNet ? "matsim" : store.get("kachelwerk.mode") ?? "matsim", { remember: false });
   if (params.get("crs")) $("crs").value = params.get("crs");
-  let linked = null;
-  try {
-    if (params.get("net")) linked = new URL(params.get("net"), SVN_ROOT).href;
-  } catch { /* not an address */ }
-  if (linked) {
+  const linked = linkedData ?? linkedNet;
+  if (linked?.startsWith(SVN_ROOT)) svn.start = folderOf(linked);
+  if (linkedData) {
+    loadFromUrl({ net: linkedData });
+  } else if (linkedNet) {
     const g = params.get("geo");
     let geo = "auto";
     if (g === "0" || g === "") geo = null;
     else if (g !== null) {
-      try { geo = new URL(g, folderOf(linked)).href; } catch { geo = null; }
+      try { geo = new URL(g, folderOf(linkedNet)).href; } catch { geo = null; }
     }
-    if (linked.startsWith(SVN_ROOT)) svn.start = folderOf(linked);
-    loadFromUrl({ net: linked, geo });
-  } else {
+    loadFromUrl({ net: linkedNet, geo });
+  } else if (state.mode === "matsim") {
     loadFromUrl({ net: EXAMPLE_URL, example: true });
+  } else {
+    $("status-text").textContent = MODES.geo.waiting;
   }
 })();
 </script>

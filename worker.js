@@ -203,6 +203,13 @@ const unescapeXml = (s) =>
         e[0] === "#" ? String.fromCodePoint(e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : Number(e.slice(1))) : ENTITIES[e] ?? m)
     : s;
 
+// a pt link carries only transit modes; a road that buses also use ("car,pt") is not one
+const PT_MODES = new Set(["pt", "bus", "tram", "rail", "train", "subway", "metro", "ferry", "funicular", "gondola", "cablecar", "cable_car", "monorail", "artificial"]);
+const isPtLink = (modes) => {
+  const list = modes.split(",").map((m) => m.trim().toLowerCase()).filter(Boolean);
+  return list.length > 0 && list.every((m) => PT_MODES.has(m));
+};
+
 /** Step 1 stand-in: a MATSim network (v1 or v2, plain or gzipped) as GeoJSON bytes. */
 async function matsimToGeoJSON(bytes, geometries) {
   const reader = textReader(bytes);
@@ -216,6 +223,7 @@ async function matsimToGeoJSON(bytes, geometries) {
   let crs = null;
   let missing = 0;
   let withGeometry = 0;
+  let ptLinks = 0;
 
   for (;;) {
     const { value, done } = await reader.read();
@@ -259,6 +267,9 @@ async function matsimToGeoJSON(bytes, geometries) {
       if (coords) withGeometry++;
       else coords = `[${from}],[${to}]`;
       const freespeed = Number(a.freespeed);
+      const modes = unescapeXml(a.modes ?? "");
+      const pt = isPtLink(modes);
+      if (pt) ptLinks++;
       const properties = JSON.stringify({
         id,
         from: fromId,
@@ -268,7 +279,8 @@ async function matsimToGeoJSON(bytes, geometries) {
         freespeed_kmh: Math.round(freespeed * 36) / 10,
         capacity: Number(a.capacity),
         permlanes: Number(a.permlanes),
-        modes: unescapeXml(a.modes ?? ""),
+        modes,
+        pt,
       });
       out.add(`{"type":"Feature","properties":${properties},"geometry":{"type":"LineString","coordinates":[${coords}]}}`);
       if (out.count % 50000 === 0) status(`MATSim-Netz lesen: ${de(out.count)} Links …`);
@@ -278,8 +290,10 @@ async function matsimToGeoJSON(bytes, geometries) {
   if (out.count === 0) {
     throw new Error("In der Datei stehen keine <link>-Elemente. Ist es ein MATSim-Netz (network.xml)?");
   }
-  return { bytes: out.finish(), links: out.count, nodes: nodes.size, crs, missing, withGeometry };
+  return { bytes: out.finish(), links: out.count, nodes: nodes.size, crs, missing, withGeometry, ptLinks };
 }
+
+const EXTENSIONS = { parquet: "parquet", geojson: "geojson", fgb: "fgb", csv: "csv" };
 
 // step 1 of the last MATSim network: { key, input, info }
 let prepared = null;
@@ -302,9 +316,10 @@ async function prepareMatsim(job) {
   }
   status("MATSim-Netz lesen …");
   const g = await matsimToGeoJSON(new Uint8Array(job.bytes), geometries);
-  Object.assign(info, { links: g.links, nodes: g.nodes, crsFromFile: g.crs, missing: g.missing, withGeometry: geometries ? g.withGeometry : null });
+  Object.assign(info, { links: g.links, nodes: g.nodes, ptLinks: g.ptLinks, crsFromFile: g.crs, missing: g.missing, withGeometry: geometries ? g.withGeometry : null });
   log(`Schritt 1: ${de(g.links)} Links, ${de(g.nodes)} Knoten` +
     (geometries ? `, ${de(g.withGeometry)} mit Geometrie aus der Datei` : "") +
+    (g.ptLinks ? `, ${de(g.ptLinks)} pt-Links` : "") +
     (g.missing ? `, ${de(g.missing)} Links ohne Knoten übersprungen` : "") +
     `, GeoJSON ${de(Math.round(g.bytes.length / 1048576))} MB`);
   prepared = { key: job.key, input: g.bytes, info };
@@ -330,10 +345,14 @@ async function tile(job) {
   } else {
     prepared = null;
     input = new Uint8Array(job.bytes);
-    inputName = "input.parquet";
+    if (input[0] === 0x1f && input[1] === 0x8b) {
+      status("Datei entpacken …");
+      input = new Uint8Array(await new Response(new Blob([input]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer());
+    }
+    inputName = `input.${EXTENSIONS[job.kind] ?? "geojson"}`;
   }
   // GeoParquet names its own CRS; -s only applies when it does not
-  info.crs = job.kind === "matsim" ? crs : null;
+  info.crs = job.kind === "matsim" ? crs : job.kind === "parquet" ? null : crs;
   const t1 = performance.now();
 
   const args = ["manby", "-l", job.layer, "-n", job.name];
