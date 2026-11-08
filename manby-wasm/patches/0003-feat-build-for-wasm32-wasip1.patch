@@ -1,4 +1,4 @@
-From 29a8d5a93f813f5c9a54656cabada85018639385 Mon Sep 17 00:00:00 2001
+From bc9faacf7b1366da7e5572bd5e33461ef92a53aa Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Sun, 8 Nov 2026 10:32:11 +0000
 Subject: [PATCH 3/3] feat: build for wasm32-wasip1
@@ -46,16 +46,16 @@ Claude-Session: https://claude.ai/code/session_018JFwoob6fHaD4i2xGpSuk7
  src/join/source.rs                          |   4 +-
  src/lib.rs                                  |   1 +
  src/main.rs                                 |   2 +
- src/mem.rs                                  |  14 +-
+ src/mem.rs                                  |  29 +++-
  src/options.rs                              |   8 +-
  src/order.rs                                |   4 +-
  src/pool.rs                                 |  63 +++++++++
  src/serve/tileset.rs                        |   2 +-
  src/sink/dir.rs                             |   2 +-
- src/sink/pmtiles.rs                         |   2 +-
+ src/sink/pmtiles.rs                         |   4 +-
  src/tiler/engine.rs                         |  17 +++
  src/tiler/mod.rs                            |  12 +-
- 29 files changed, 494 insertions(+), 62 deletions(-)
+ 29 files changed, 509 insertions(+), 64 deletions(-)
  create mode 100644 crates/tippecanoe-rs/src/os.rs
  create mode 100644 src/pool.rs
 
@@ -940,7 +940,7 @@ index ce44e88..6800b72 100644
  pub static MALLOC_CONF: MallocConf =
      MallocConf(c"narenas:4,dirty_decay_ms:0,muzzy_decay_ms:0,retain:true".as_ptr() as *const u8);
 diff --git a/src/mem.rs b/src/mem.rs
-index 07a2c78..ad10f34 100644
+index 07a2c78..e43c7d8 100644
 --- a/src/mem.rs
 +++ b/src/mem.rs
 @@ -35,8 +35,13 @@ pub fn resident() -> Option<u64> {
@@ -986,6 +986,35 @@ index 07a2c78..ad10f34 100644
  
  use crate::Error;
  use crate::buf::Buf;
+@@ -387,6 +399,19 @@ impl std::ops::Deref for Loaded<'_> {
+     }
+ }
+ 
++/// The process id, for the names of temporary files. WASI has no processes,
++/// and `std::process::id` panics there.
++pub fn process_id() -> u32 {
++    #[cfg(target_os = "wasi")]
++    {
++        0
++    }
++    #[cfg(not(target_os = "wasi"))]
++    {
++        std::process::id()
++    }
++}
++
+ /// Creates a file in `dir` and unlinks it at once, as tippecanoe does with
+ /// its temporary files, so that it goes away however the process ends.
+ pub fn create_unlinked(dir: &Path, what: &str) -> std::result::Result<File, String> {
+@@ -394,7 +419,7 @@ pub fn create_unlinked(dir: &Path, what: &str) -> std::result::Result<File, Stri
+         let name = dir.join(format!(
+             "manby-{}-{}-{}-{}",
+             what,
+-            std::process::id(),
++            process_id(),
+             attempt,
+             std::time::SystemTime::now()
+                 .duration_since(std::time::UNIX_EPOCH)
 diff --git a/src/options.rs b/src/options.rs
 index 9297f3e..d8fb243 100644
 --- a/src/options.rs
@@ -1128,7 +1157,7 @@ index f2e112c..6f4f2b9 100644
  
  use super::{SinkSettings, TileSink, check_tile, io_message, tileset_metadata, to_string_double};
 diff --git a/src/sink/pmtiles.rs b/src/sink/pmtiles.rs
-index 7e2b1f8..b7a4127 100644
+index 7e2b1f8..34e074a 100644
 --- a/src/sink/pmtiles.rs
 +++ b/src/sink/pmtiles.rs
 @@ -23,7 +23,6 @@
@@ -1147,6 +1176,15 @@ index 7e2b1f8..b7a4127 100644
  use tippecanoe::pmtiles::{self, EntryV3, HeaderV3};
  use tippecanoe::write_json::JsonWriter;
  
+@@ -246,7 +246,7 @@ fn create_unlinked(dir: &Path) -> std::result::Result<File, String> {
+     for attempt in 0..100u32 {
+         let name = dir.join(format!(
+             "manby-pmtiles-{}-{}-{}",
+-            std::process::id(),
++            crate::mem::process_id(),
+             attempt,
+             std::time::SystemTime::now()
+                 .duration_since(std::time::UNIX_EPOCH)
 diff --git a/src/tiler/engine.rs b/src/tiler/engine.rs
 index dadfc09..4d1035b 100644
 --- a/src/tiler/engine.rs

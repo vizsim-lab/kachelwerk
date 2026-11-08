@@ -4,7 +4,7 @@
 (v0.1.9) mit den drei Patches aus `patches/`, gebaut für `wasm32-wasip1` und mit `llvm-strip`
 ohne Debuginfo.
 
-SHA-256: `5aaa01fffd753c30a688b60b1430261bdee3dec4d856897d7690e258716d079f`
+SHA-256: `35e7afd98db2e8e7df06e6e4390d01a9366daeb39b46e5b792cdc27bf1171e46`
 
 ## Patches
 
@@ -29,6 +29,8 @@ unverändert, abgesehen vom Bugfix in 0001.
    - einen Single-Thread-Pfad: Die Pools sind der aufrufende Thread, und der Koordinator arbeitet
      die Tasks selbst ab
    - GeoParquet wird unter WASI in den Speicher gelesen
+   - Namen für temporäre Dateien ohne Prozess-ID: `std::process::id` bricht unter WASI ab. Das
+     trifft erst größere Netze, bei denen manby Kacheln auf die (hier virtuelle) Platte auslagert
 
 0001 und 0002 taugen als eigene Upstream-PRs.
 
@@ -53,6 +55,8 @@ Der Weg MATSim-Netz → GeoParquet → PMTiles, WASM gegen den nativen Build:
   sie gleich.
 - Laufzeit Kelheim `-z14`: WASM rund 1,6–2 s auf einem Thread, nativ 0,7 s auf 2 Kernen. Der
   Speicher bleibt bei rund 34 MiB.
+- Ein künstliches Netz aus 20 Kopien von Kelheim (401.740 Links, mit Link-Geometrien, `-zg`):
+  rund 45 s über `../worker.js` in Node, 275 MiB WASM-Speicher, 40 MB PMTiles.
 - Größe: 9,8 MB, mit gzip 3,0 MB, mit brotli 2,2 MB.
 - Gelaufen ist manby.wasm mit Nodes WASI, mit dem Browser-Shim
   [`@bjorn3/browser_wasi_shim`](https://www.npmjs.com/package/@bjorn3/browser_wasi_shim) 0.4.2 in

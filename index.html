@@ -68,7 +68,8 @@
 }
 
 html { height: 100%; box-sizing: border-box; }
-*, *::before, *::after { box-sizing: inherit; }
+/* border-box everywhere; inheriting it would break inside <details>, whose slot has no author styles */
+*, *::before, *::after { box-sizing: border-box; }
 body {
   height: 100%;
   margin: 0;
@@ -167,6 +168,47 @@ body {
   color: var(--muted);
 }
 .chip.example { border-color: var(--signal); color: var(--fg); }
+.source a.name { color: inherit; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); text-underline-offset: 2px; }
+.linkbtn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: 600 13px/1.4 var(--font-display);
+  letter-spacing: 0.03em;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.linkbtn:hover { text-decoration-color: currentColor; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.geo { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; font-size: 13px; color: var(--muted); }
+.geo strong { color: var(--fg); font-weight: 600; overflow-wrap: anywhere; }
+.geo label.linkbtn:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* VSP-SVN browser */
+.svn { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.svn > summary { padding: 10px 14px; cursor: pointer; font-weight: 600; font-size: 14.5px; }
+.svn > summary::marker { color: var(--muted); }
+.svn > summary small { margin-left: 6px; color: var(--muted); font-weight: 400; font-size: 13px; }
+.svn[open] > summary { border-bottom: 1px solid var(--line); }
+.svn-body { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px 12px; }
+.crumbs { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 2px; font: 500 13px/1.5 var(--font-display); color: var(--muted); }
+.crumbs button { padding: 0 2px; border: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; overflow-wrap: anywhere; text-align: left; }
+.crumbs button:last-child { color: var(--fg); font-weight: 600; }
+.svn-list { list-style: none; margin: 0; padding: 0; max-height: 264px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; }
+.svn-list li + li { border-top: 1px solid var(--line); }
+.svn-list button { display: flex; align-items: baseline; gap: 8px; width: 100%; padding: 6px 10px; border: 0; background: none; color: var(--fg); font: 13px/1.35 var(--font-mono); text-align: left; cursor: pointer; }
+.svn-list button:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.svn-list .n { min-width: 0; overflow-wrap: anywhere; }
+.svn-list .dir .n { font-weight: 500; }
+.svn-list .chip { margin-left: auto; flex: none; }
+.svn-list .empty { padding: 6px 10px; color: var(--muted); font-size: 13px; }
+.svn-url { display: flex; gap: 8px; }
+.svn-url input { flex: 1; min-width: 0; padding: 6px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); color: var(--fg); font: 13px/1.3 var(--font-mono); }
+.svn-url input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.btn.small { padding: 7px 12px; font-size: 14px; }
 .credit { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
 .credit a, .foot a { color: inherit; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); text-underline-offset: 2px; }
 .credit a:hover, .foot a:hover { color: var(--fg); text-decoration-color: currentColor; }
@@ -254,17 +296,35 @@ details.log pre {
 .legend .title { font: 600 13px/1.2 var(--font-display); letter-spacing: 0.03em; }
 .legend .ramp { height: 7px; border-radius: 4px; background: linear-gradient(90deg, var(--ramp-0), var(--ramp-1), var(--ramp-2), var(--ramp-3)); }
 .legend .ticks { display: flex; justify-content: space-between; font: 11.5px var(--font-mono); font-variant-numeric: tabular-nums; color: var(--muted); }
-.maptag {
+/* basemap switch, top left; the line colors follow the basemap, not the page theme */
+.basemap {
   position: absolute;
-  right: max(12px, env(safe-area-inset-right, 0px));
-  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
-  padding: 3px 8px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--surface) 85%, transparent);
-  color: var(--muted);
-  font: 500 11.5px/1.4 var(--font-display);
-  letter-spacing: 0.04em;
+  top: calc(10px + env(safe-area-inset-top, 0px));
+  left: max(10px, env(safe-area-inset-left, 0px));
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.12);
 }
+.basemap button {
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font: 600 12.5px/1.2 var(--font-display);
+  letter-spacing: 0.03em;
+  cursor: pointer;
+}
+.basemap button:hover { color: var(--fg); }
+.basemap button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.basemap-err { padding: 0 8px 0 4px; color: var(--danger); font: 500 12px/1.2 var(--font-display); }
+.mapwrap[data-basemap="positron"] { --ramp-0: #c9b98f; --ramp-1: #e2a13d; --ramp-2: #c0522b; --ramp-3: #173f8f; }
+.mapwrap[data-basemap="dark"] { --ramp-0: #4a5a70; --ramp-1: #8f6a33; --ramp-2: #e0952f; --ramp-3: #ffd75a; }
 .busy {
   position: absolute;
   top: calc(12px + env(safe-area-inset-top, 0px));
@@ -298,9 +358,17 @@ details.log pre {
   .mapwrap { order: -1; height: 58vh; height: 58svh; min-height: 300px; }
   .panel { overflow: visible; border-right: 0; padding-right: max(16px, env(safe-area-inset-right, 0px)); }
 }
-@media (max-width: 520px) {
-  /* the legend takes the bottom edge; the tag moves to the free top-left corner */
-  .maptag { top: calc(12px + env(safe-area-inset-top, 0px)); bottom: auto; left: max(12px, env(safe-area-inset-left, 0px)); right: auto; }
+/* the legend owns the bottom left; a long attribution wraps instead of covering it */
+.maplibregl-ctrl-bottom-right { max-width: calc(100% - 290px); }
+@media (max-width: 760px) {
+  /* below the basemap switch rather than beside it */
+  .busy { top: calc(54px + env(safe-area-inset-top, 0px)); max-width: calc(100% - 24px); }
+}
+@media (max-width: 640px) {
+  /* phones: the attribution takes the bottom edge, the legend goes under the basemap switch */
+  .maplibregl-ctrl-bottom-right { max-width: 100%; }
+  .legend { top: calc(54px + env(safe-area-inset-top, 0px)); bottom: auto; }
+  .busy { top: calc(128px + env(safe-area-inset-top, 0px)); }
 }
 @media (prefers-reduced-motion: reduce) {
   .bar.indeterminate i { animation: none; width: 100%; opacity: 0.5; }
@@ -317,11 +385,32 @@ details.log pre {
     <section class="step" aria-labelledby="h-net">
       <h2 id="h-net"><b>1</b>Netz</h2>
       <label class="drop" id="drop" for="file">
-        <strong>Datei wählen oder hierher ziehen</strong>
-        <small>GeoParquet (<code>.parquet</code>) oder MATSim-Netz (<code>network.xml</code>, <code>.xml.gz</code>)</small>
-        <input type="file" id="file" accept=".parquet,.xml,.gz,application/gzip,application/xml,text/xml">
+        <strong>Dateien wählen oder hierher ziehen</strong>
+        <small>MATSim-Netz (<code>network.xml</code>, <code>.xml.gz</code>), dazu gern die Link-Geometrien (<code>…-linkGeometries.csv</code>), oder GeoParquet (<code>.parquet</code>)</small>
+        <input type="file" id="file" multiple accept=".parquet,.xml,.gz,.csv,application/gzip,application/xml,text/xml,text/csv">
       </label>
+      <details class="svn" id="svn">
+        <summary>Aus dem VSP-SVN laden <small>public-svn, countries/de</small></summary>
+        <div class="svn-body">
+          <nav class="crumbs" id="svn-crumbs" aria-label="Ordner im SVN"></nav>
+          <ul class="svn-list" id="svn-list"></ul>
+          <p class="note" id="svn-note" hidden></p>
+          <label class="check" id="svn-geo-row" for="svn-geo" hidden>
+            <input type="checkbox" id="svn-geo" checked>
+            <span>Link-Geometrien mitladen: <code id="svn-geo-name"></code></span>
+          </label>
+          <form class="svn-url" id="svn-url-form">
+            <input type="text" id="svn-url" placeholder="Pfad oder Adresse" spellcheck="false" autocomplete="off" aria-label="Pfad im SVN oder Adresse einer Datei oder eines Ordners">
+            <button class="btn secondary small" type="submit">Öffnen</button>
+          </form>
+        </div>
+      </details>
       <div class="source" id="source" aria-live="polite"><span class="note">Noch keine Datei geladen.</span></div>
+      <div class="geo" id="geo" hidden>
+        <span id="geo-text"></span>
+        <label class="linkbtn" id="geo-pick">Geometrie-Datei wählen<input type="file" id="geo-file" class="visually-hidden" accept=".csv,.gz,text/csv,application/gzip"></label>
+        <button type="button" class="linkbtn" id="geo-clear" hidden>ohne Geometrien</button>
+      </div>
       <p class="credit" id="credit" hidden>
         Beispielnetz: Ausschnitt aus dem <a href="https://github.com/matsim-scenarios/matsim-kelheim" target="_blank" rel="noopener">MATSim-Szenario Kelheim</a>,
         Datei <code>network-with-pt.xml.gz</code> aus <a href="https://github.com/matsim-org/matsim-libs/tree/033fd8ba25af5075ed645cb1972aa67873316237/examples/scenarios/kelheim" target="_blank" rel="noopener">matsim-libs</a>,
@@ -403,20 +492,25 @@ details.log pre {
     </section>
 
     <footer class="foot">
-      <p>Kacheln mit <a href="https://github.com/birkskyum/manby" target="_blank" rel="noopener">manby</a> als WebAssembly, Karte mit <a href="https://maplibre.org/" target="_blank" rel="noopener">MapLibre GL JS</a>.
+      <p>Kacheln mit <a href="https://github.com/birkskyum/manby" target="_blank" rel="noopener">manby</a> als WebAssembly, Karte mit <a href="https://maplibre.org/" target="_blank" rel="noopener">MapLibre GL JS</a> und <a href="https://openfreemap.org/" target="_blank" rel="noopener">OpenFreeMap</a>.
       <a href="https://github.com/vizsim-lab/kachelwerk" target="_blank" rel="noopener">Quellcode</a> und <a href="https://github.com/vizsim-lab/kachelwerk/blob/main/THIRD_PARTY_LICENSES.md" target="_blank" rel="noopener">Lizenzen</a> auf GitHub.</p>
     </footer>
   </aside>
 
-  <main class="mapwrap">
+  <main class="mapwrap" id="mapwrap">
     <div id="map" role="region" aria-label="Kartenvorschau der Kacheln"></div>
+    <div class="basemap" id="basemap" role="group" aria-label="Hintergrundkarte (OpenFreeMap)">
+      <button type="button" value="positron" aria-pressed="false">Positron</button>
+      <button type="button" value="dark" aria-pressed="false">Dark</button>
+      <button type="button" value="none" aria-pressed="false">Ohne</button>
+      <span class="basemap-err" id="basemap-error" hidden></span>
+    </div>
     <div class="busy" id="busy" hidden>Kacheln …</div>
     <div class="legend" id="legend" hidden>
       <span class="title" id="legend-title"></span>
       <div class="ramp"></div>
       <div class="ticks" id="legend-ticks"></div>
     </div>
-    <div class="maptag">Ohne Hintergrundkarte</div>
   </main>
 </div>
 
@@ -428,6 +522,11 @@ details.log pre {
   const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   const de = (n, digits = 0) => Number(n).toLocaleString("de-DE", { maximumFractionDigits: digits, minimumFractionDigits: digits });
   const mb = (bytes) => `${de(bytes / 1048576, bytes < 10485760 ? 1 : 0)} MB`;
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  const store = {
+    get(key) { try { return localStorage.getItem(key); } catch { return null; } },
+    set(key, value) { try { localStorage.setItem(key, value); } catch { /* private mode, blocked storage */ } },
+  };
   const UNITS = { freespeed: "m/s", freespeed_kmh: "km/h", capacity: "Fz/h", permlanes: "Fahrstreifen", length: "m" };
   const PREFERRED = ["freespeed_kmh", "freespeed", "capacity", "permlanes", "length"];
   // MATSim road classes: Tempo 30, innerorts 50, Landstraße 80, Autobahn 120
@@ -439,32 +538,147 @@ details.log pre {
   };
   const RAMP = ["--ramp-0", "--ramp-1", "--ramp-2", "--ramp-3"];
 
-  const state = { source: null, bytes: null, name: "netz", attrs: [], attr: null, layer: "links", runs: 0, running: false };
+  // Kelheim example from matsim-libs (CC BY-NC 4.0), fetched at runtime and not part of this
+  // repository. Pinned to one commit so that the file cannot change under the page.
+  const EXAMPLE_URL = "https://raw.githubusercontent.com/matsim-org/matsim-libs/033fd8ba25af5075ed645cb1972aa67873316237/examples/scenarios/kelheim/network-with-pt.xml.gz";
+  const EXAMPLE_CREDIT = '<a href="https://github.com/matsim-org/matsim-libs/tree/033fd8ba25af5075ed645cb1972aa67873316237/examples/scenarios/kelheim" target="_blank" rel="noopener">MATSim Kelheim</a> (CC BY-NC 4.0)';
+  // VSP's public SVN at TU Berlin; it lets other sites read its files (CORS), as SimWrapper does
+  const SVN_ROOT = "https://svn.vsp.tu-berlin.de/repos/public-svn/matsim/scenarios/countries/de/";
+  const BASEMAPS = {
+    positron: "https://tiles.openfreemap.org/styles/positron",
+    dark: "https://tiles.openfreemap.org/styles/dark",
+  };
+  const DEFAULT_CRS = $("crs").value;
+
+  const state = {
+    source: null, // { id, name, label, kind, bytes, url?, example?, credit? }
+    geometry: null, // { id, name, bytes, url? }
+    ids: 0,
+    bytes: null, // the last PMTiles
+    name: "netz",
+    attrs: [],
+    attr: null,
+    layer: "links",
+    runs: 0,
+    running: false,
+    workerKey: null, // the network whose GeoJSON the worker holds
+    result: null, // { key, links, withGeometry } of the last run
+    overlay: null,
+    archiveKey: null,
+    basemap: null,
+  };
 
   // ---------- map ----------
+  const mapwrap = $("mapwrap");
+  const mapCss = (name) => getComputedStyle(mapwrap).getPropertyValue(name).trim();
+  const darkScheme = matchMedia("(prefers-color-scheme: dark)");
+  const uiDark = () => {
+    const theme = document.documentElement.dataset.theme;
+    return theme ? theme === "dark" : darkScheme.matches;
+  };
+  const plainStyle = () => ({ version: 8, sources: {}, layers: [{ id: "bg", type: "background", paint: { "background-color": css("--map-bg") } }] });
+
   const protocol = new pmtiles.Protocol({ metadata: true });
   maplibregl.addProtocol("pmtiles", protocol.tile);
   const map = new maplibregl.Map({
     container: "map",
-    style: { version: 8, sources: {}, layers: [{ id: "bg", type: "background", paint: { "background-color": css("--map-bg") } }] },
+    style: plainStyle(),
     center: [11.88, 48.9],
     zoom: 9,
-    attributionControl: false,
     dragRotate: false,
     pitchWithRotate: false,
   });
   map.touchZoomRotate.disableRotation();
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
   const mapReady = new Promise((resolve) => map.once("load", resolve));
+  let styleReady = false;
+  map.on("style.load", () => {
+    styleReady = true;
+    placeOverlay();
+  });
 
   function colorExpression() {
     const a = state.attr;
-    if (!a || a.stops.length < 2) return css("--ramp-3");
-    const colors = RAMP.map(css);
+    if (!a || a.stops.length < 2) return mapCss("--ramp-3");
+    const colors = RAMP.map(mapCss);
     const expr = ["interpolate", ["linear"], ["to-number", ["get", a.attribute], a.stops[0]]];
     a.stops.forEach((stop, i) => expr.push(stop, colors[Math.round((i * 3) / (a.stops.length - 1))]));
     return expr;
   }
+
+  /** The network layer, under the basemap's labels; again after every change of basemap. */
+  function placeOverlay() {
+    if (!styleReady || !state.overlay) return;
+    if (map.getLayer("net")) map.removeLayer("net");
+    if (map.getSource("net")) map.removeSource("net");
+    map.addSource("net", state.overlay.source);
+    const before = map.getStyle().layers.find((l) => l.type === "symbol")?.id;
+    const layer = state.overlay.layer;
+    map.addLayer({ ...layer, paint: { ...layer.paint, "line-color": colorExpression() } }, before);
+  }
+
+  // basemaps from OpenFreeMap; the choice is remembered, otherwise it follows the page theme
+  const styles = {};
+  function baseStyle(name) {
+    if (name === "none") return Promise.resolve(plainStyle());
+    styles[name] ??= fetch(BASEMAPS[name]).then((res) => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    });
+    return styles[name].then(
+      (style) => structuredClone(style),
+      (err) => {
+        delete styles[name];
+        throw err;
+      }
+    );
+  }
+  let basemapChoice = store.get("kachelwerk.basemap");
+  if (!["positron", "dark", "none"].includes(basemapChoice)) basemapChoice = null;
+  const autoBasemap = () => (uiDark() ? "dark" : "positron");
+  let basemapToken = 0;
+
+  function markBasemap(name) {
+    state.basemap = name;
+    mapwrap.dataset.basemap = name;
+    for (const b of $("basemap").querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.value === name));
+  }
+
+  async function setBasemap(name) {
+    const token = ++basemapToken;
+    markBasemap(name);
+    $("basemap-error").hidden = true;
+    let style;
+    try {
+      style = await baseStyle(name);
+    } catch {
+      if (token !== basemapToken) return;
+      markBasemap("none");
+      $("basemap-error").textContent = "nicht erreichbar";
+      $("basemap-error").hidden = false;
+      style = plainStyle();
+    }
+    if (token !== basemapToken) return;
+    styleReady = false;
+    map.setStyle(style, { diff: false });
+  }
+  $("basemap").addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    basemapChoice = b.value;
+    store.set("kachelwerk.basemap", b.value);
+    setBasemap(b.value);
+  });
+  setBasemap(basemapChoice ?? autoBasemap());
+
+  function applyTheme() {
+    if (!basemapChoice && state.basemap !== autoBasemap()) return setBasemap(autoBasemap());
+    if (map.getLayer("bg")) map.setPaintProperty("bg", "background-color", css("--map-bg"));
+    if (map.getLayer("net")) map.setPaintProperty("net", "line-color", colorExpression());
+    renderLegend();
+  }
+  darkScheme.addEventListener("change", applyTheme);
+  new MutationObserver(applyTheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
   /** Color stops: the road classes for MATSim's own attributes, else spread over the values seen. */
   function stopsFor(name, min, max, values) {
@@ -475,14 +689,6 @@ details.log pre {
     s = s.filter((x, i, all) => i === 0 || x > all[i - 1]);
     return max > min ? s : [];
   }
-
-  function applyTheme() {
-    if (!map.getLayer("bg")) return;
-    map.setPaintProperty("bg", "background-color", css("--map-bg"));
-    if (map.getLayer("net")) map.setPaintProperty("net", "line-color", colorExpression());
-  }
-  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyTheme);
-  new MutationObserver(applyTheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
   function numericAttributes(meta, layer) {
     const layers = meta?.tilestats?.layers ?? [];
@@ -528,20 +734,25 @@ details.log pre {
     state.attrs = attrs;
     state.attr = attrs[0] ?? null;
 
-    if (map.getLayer("net")) map.removeLayer("net");
-    if (map.getSource("net")) map.removeSource("net");
-    map.addSource("net", { type: "vector", url: `pmtiles://${archive.source.getKey()}` });
-    map.addLayer({
-      id: "net",
-      type: "line",
-      source: "net",
-      "source-layer": meta.vector_layers?.[0]?.id ?? state.layer,
-      layout: { "line-cap": "round", "line-join": "round" },
-      paint: {
-        "line-color": colorExpression(),
-        "line-width": ["interpolate", ["exponential", 1.6], ["zoom"], 6, 0.35, 10, 0.9, 13, 1.9, 16, 4.5],
+    state.overlay = {
+      source: {
+        type: "vector",
+        url: `pmtiles://${archive.source.getKey()}`,
+        ...(state.source?.credit ? { attribution: state.source.credit } : {}),
       },
-    });
+      layer: {
+        id: "net",
+        type: "line",
+        source: "net",
+        "source-layer": meta.vector_layers?.[0]?.id ?? state.layer,
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: { "line-width": ["interpolate", ["exponential", 1.6], ["zoom"], 6, 0.35, 10, 0.9, 13, 1.9, 16, 4.5] },
+      },
+    };
+    placeOverlay();
+    // the previous archive is no longer shown; let its bytes go
+    if (state.archiveKey) protocol.tiles?.delete?.(state.archiveKey);
+    state.archiveKey = archive.source.getKey();
     map.fitBounds([[header.minLon, header.minLat], [header.maxLon, header.maxLat]], { padding: 36, duration: 0 });
 
     const select = $("color-by");
@@ -605,6 +816,14 @@ details.log pre {
     $("busy").textContent = text;
   }
 
+  function doneText(info) {
+    let text = `Fertig in ${de((info.msStep1 + info.msTiling) / 1000, 1)} s`;
+    if (info.crs) text += `, umprojiziert aus ${info.crs}`;
+    text += ".";
+    if (info.withGeometry === 0) text += " Keine Link-ID aus der Geometrie-Datei passt zum Netz; die Links sind gerade Linien.";
+    return text;
+  }
+
   let worker;
   function startWorker() {
     worker = new Worker(new URL("worker.js", location.href), { type: "module" });
@@ -615,10 +834,12 @@ details.log pre {
       else if (m.type === "error") fail(m.message);
       else if (m.type === "done") {
         state.bytes = m.pmtiles;
+        state.workerKey = m.info.key ?? null;
+        state.result = { key: m.info.key, links: m.info.links, withGeometry: m.info.withGeometry };
         try {
           await show(m.pmtiles, m.info);
-          const secs = de((m.info.msStep1 + m.info.msTiling) / 1000, 1);
-          setStatus(`Fertig in ${secs} s${m.info.crs ? `, umprojiziert aus ${m.info.crs}` : ""}.`, "done");
+          setStatus(doneText(m.info), "done");
+          renderSource();
           offerSave();
         } catch (err) {
           fail(`Die Kacheln ließen sich nicht anzeigen: ${err.message}`);
@@ -631,6 +852,7 @@ details.log pre {
       fail(`Der Worker konnte nicht starten${e.message ? `: ${e.message}` : ""}. Ohne ihn läuft manby nicht.`);
       worker.terminate();
       worker = null;
+      state.workerKey = null;
     };
   }
 
@@ -647,8 +869,16 @@ details.log pre {
     $("run").disabled = !state.source;
   }
 
+  const runKey = () => (state.source?.kind === "matsim" ? `${state.source.id}:${state.geometry?.id ?? 0}` : null);
+
   function run() {
-    if (!state.source || state.running) return;
+    if (!state.source) return;
+    if (state.running) {
+      // a new network or new geometries replace the job that is still running
+      worker?.terminate();
+      worker = null;
+      state.workerKey = null;
+    }
     if (!worker) startWorker();
     state.running = true;
     $("run").disabled = true;
@@ -656,24 +886,43 @@ details.log pre {
     $("save-note").hidden = true;
     logEl.textContent = "";
     setStatus("Startet …");
+    if (state.source.url && !state.source.example) updateLink();
     const layer = $("layer").value.trim() || "links";
     state.layer = layer;
     const extra = $("extra").value.trim();
-    const bytes = state.source.bytes.slice();
+    // the worker keeps step 1 of the last network, so a second run needs no bytes
+    const key = runKey();
+    const reuse = key !== null && key === state.workerKey;
+    const net = reuse ? null : state.source.bytes.slice();
+    const geo = reuse || !state.geometry ? null : state.geometry.bytes.slice();
     worker.postMessage({
       kind: state.source.kind,
-      bytes: bytes.buffer,
+      key,
+      bytes: net?.buffer ?? null,
+      geometry: geo?.buffer ?? null,
       name: state.name,
       layer,
       crs: $("crs").value.trim() || null,
       maxzoom: $("maxzoom").value,
       dropDensest: $("drop-densest").checked,
       extra: extra ? extra.split(/\s+/) : [],
-    }, [bytes.buffer]);
+    }, [net?.buffer, geo?.buffer].filter(Boolean));
   }
   $("run").addEventListener("click", run);
 
   // ---------- input ----------
+  const GEO_FILE = /linkGeometr|\.csv(\.gz)?$/i;
+  const stem = (name) => name.replace(/\.(xml\.gz|xml|gz|parquet)$/i, "");
+  const fileName = (url) => {
+    const last = new URL(url).pathname.split("/").filter(Boolean).pop() ?? "netz";
+    try { return decodeURIComponent(last); } catch { return last; }
+  };
+  const folderOf = (url) => new URL("./", url).href;
+  const reason = (err) =>
+    err instanceof TypeError
+      ? "keine Verbindung, oder der Server erlaubt den Abruf aus dem Browser nicht"
+      : err?.message ?? String(err);
+
   function detectKind(name, bytes) {
     const head = new TextDecoder().decode(bytes.subarray(0, 512));
     if (head.startsWith("PAR1")) return "parquet";
@@ -683,70 +932,424 @@ details.log pre {
     return null;
   }
 
+  function chip(text, extra = "") {
+    const c = document.createElement("span");
+    c.className = `chip ${extra}`.trim();
+    c.textContent = text;
+    return c;
+  }
+
   function setSource(src) {
-    state.source = src;
-    state.name = src.name.replace(/[^\w.-]+/g, "_") || "netz";
+    state.source = { ...src, id: ++state.ids };
+    state.geometry = null;
+    state.name = stem(src.name).replace(/[^\w.-]+/g, "_") || "netz";
+    renderSource();
+  }
+
+  function setGeometry(g) {
+    state.geometry = g ? { ...g, id: ++state.ids } : null;
+    renderSource();
+  }
+
+  function renderSource() {
+    const src = state.source;
     const box = $("source");
     box.replaceChildren();
-    const name = document.createElement("span");
+    $("credit").hidden = !src?.example;
+    $("geo").hidden = src?.kind !== "matsim";
+    if (!src) {
+      const n = document.createElement("span");
+      n.className = "note";
+      n.textContent = "Noch keine Datei geladen.";
+      box.append(n);
+      return;
+    }
+    const name = document.createElement(src.url ? "a" : "span");
     name.className = "name";
     name.textContent = src.label;
-    const kind = document.createElement("span");
-    kind.className = "chip";
-    kind.textContent = src.kind === "parquet" ? "GeoParquet" : "MATSim-XML";
+    if (src.url) Object.assign(name, { href: src.url, target: "_blank", rel: "noopener" });
     const size = document.createElement("span");
     size.className = "note";
     size.textContent = mb(src.bytes.length);
-    box.append(name, kind, size);
-    if (src.example) {
-      const ex = document.createElement("span");
-      ex.className = "chip example";
-      ex.textContent = "Beispiel";
-      box.append(ex);
+    box.append(name, chip(src.kind === "parquet" ? "GeoParquet" : "MATSim-XML"), size);
+    if (src.url?.startsWith(SVN_ROOT)) box.append(chip("VSP-SVN"));
+    if (src.example) box.append(chip("Beispiel", "example"));
+    if (src.url && !src.example) {
+      const copy = document.createElement("button");
+      copy.type = "button";
+      copy.className = "linkbtn";
+      copy.textContent = "Link kopieren";
+      copy.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(location.href);
+          copy.textContent = "Link kopiert";
+        } catch {
+          copy.textContent = "Kopieren ging nicht";
+        }
+        setTimeout(() => (copy.textContent = "Link kopieren"), 2000);
+      });
+      box.append(copy);
     }
-    $("credit").hidden = !src.example;
+
+    const g = state.geometry;
+    const text = $("geo-text");
+    text.replaceChildren();
+    if (g) {
+      const strong = document.createElement("strong");
+      strong.textContent = g.name;
+      text.append("Link-Geometrien: ", strong, ` (${mb(g.bytes.length)})`);
+      const r = state.result;
+      if (r && r.key === runKey() && r.withGeometry != null) text.append(` · ${de(r.withGeometry)} von ${de(r.links)} Links`);
+    } else {
+      text.append("Links als gerade Linien zwischen den Knoten.");
+    }
+    $("geo-pick").firstChild.textContent = g ? "andere Datei" : "Geometrie-Datei wählen";
+    $("geo-clear").hidden = !g;
     $("run").disabled = state.running;
   }
 
-  async function takeFile(file) {
-    if (!file) return;
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const kind = detectKind(file.name, bytes);
+  let loading = null; // the download in progress, if any
+
+  async function takeFiles(list) {
+    const files = [...(list ?? [])];
+    if (!files.length) return;
+    const geoFile = files.find((f) => GEO_FILE.test(f.name));
+    const netFile = files.find((f) => f !== geoFile);
+    if (!netFile) return takeGeometryFile(geoFile);
+    loading?.abort();
+    loading = null;
+    const bytes = new Uint8Array(await netFile.arrayBuffer());
+    const kind = detectKind(netFile.name, bytes);
     if (!kind) {
-      setStatus(`${file.name} ist weder GeoParquet noch ein MATSim-Netz.`, "error");
+      setStatus(`${netFile.name} ist weder GeoParquet noch ein MATSim-Netz.`, "error");
       return;
     }
-    setSource({ name: file.name.replace(/\.(xml\.gz|xml|gz|parquet)$/i, ""), label: file.name, kind, bytes });
+    setSource({ name: netFile.name, label: netFile.name, kind, bytes });
+    if (geoFile && kind === "matsim") setGeometry({ name: geoFile.name, bytes: new Uint8Array(await geoFile.arrayBuffer()) });
+    clearLink();
     run();
   }
-  $("file").addEventListener("change", (e) => takeFile(e.target.files[0]));
+
+  async function takeGeometryFile(file) {
+    if (!file) return;
+    if (state.source?.kind !== "matsim") {
+      setStatus("Link-Geometrien gehören zu einem MATSim-Netz. Lade zuerst das Netz.", "error");
+      return;
+    }
+    setGeometry({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) });
+    run();
+  }
+
+  $("file").addEventListener("change", (e) => {
+    takeFiles(e.target.files);
+    e.target.value = "";
+  });
+  $("geo-file").addEventListener("change", (e) => {
+    takeGeometryFile(e.target.files[0]);
+    e.target.value = "";
+  });
+  $("geo-clear").addEventListener("click", () => {
+    setGeometry(null);
+    run();
+  });
   const drop = $("drop");
   drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
   drop.addEventListener("dragleave", () => drop.classList.remove("over"));
   drop.addEventListener("drop", (e) => {
     e.preventDefault();
     drop.classList.remove("over");
-    takeFile(e.dataTransfer.files[0]);
+    takeFiles(e.dataTransfer.files);
   });
 
-  // Kelheim example from matsim-libs (CC BY-NC 4.0), fetched at runtime and not part of this
-  // repository. Pinned to one commit so that the file cannot change under the page.
-  const EXAMPLE_URL = "https://raw.githubusercontent.com/matsim-org/matsim-libs/033fd8ba25af5075ed645cb1972aa67873316237/examples/scenarios/kelheim/network-with-pt.xml.gz";
+  // ---------- loading from the web ----------
+  async function fetchBytes(url, label, signal) {
+    setStatus(`${label} laden …`);
+    const res = await fetch(url, { signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const total = Number(res.headers.get("content-length")) || 0;
+    if (!res.body) return new Uint8Array(await res.arrayBuffer());
+    const reader = res.body.getReader();
+    const chunks = [];
+    let got = 0;
+    let shown = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      got += value.length;
+      if (performance.now() - shown > 150) {
+        shown = performance.now();
+        const known = total >= got; // a compressed transfer can deliver more than its length
+        setStatus(`${label} laden … ${mb(got)}${known ? ` von ${mb(total)}` : ""}`, "busy", known ? (100 * got) / total : null);
+      }
+    }
+    const bytes = new Uint8Array(got);
+    let at = 0;
+    for (const c of chunks) {
+      bytes.set(c, at);
+      at += c.length;
+    }
+    return bytes;
+  }
 
-  async function loadExample() {
-    setStatus("Beispielnetz von GitHub laden …");
+  /** Loads a network (and its link geometries, "auto" looks for them next to it) and tiles it. */
+  async function loadFromUrl({ net, geo = null, example = false }) {
+    loading?.abort();
+    const ctrl = (loading = new AbortController());
+    const name = example ? "kelheim" : fileName(net);
     try {
-      const res = await fetch(EXAMPLE_URL);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const bytes = new Uint8Array(await res.arrayBuffer());
-      if (state.source) return; // a file of one's own came first
-      setSource({ name: "kelheim", label: "Kelheim, network-with-pt.xml.gz (matsim-libs)", kind: "matsim", bytes, example: true });
+      if (geo === "auto") {
+        setStatus("Link-Geometrien neben dem Netz suchen …");
+        geo = (await findGeometry(net))?.url ?? null;
+      }
+      const bytes = await fetchBytes(net, example ? "Beispielnetz von GitHub" : name, ctrl.signal);
+      const kind = detectKind(name, bytes);
+      if (!kind) throw new Error(`${name} ist weder GeoParquet noch ein MATSim-Netz`);
+      let geometry = null;
+      if (geo && kind === "matsim") {
+        const gname = fileName(geo);
+        geometry = { name: gname, url: geo, bytes: await fetchBytes(geo, gname, ctrl.signal) };
+      }
+      if (ctrl.signal.aborted) return;
+      loading = null;
+      setSource({
+        name,
+        label: example ? "Kelheim, network-with-pt.xml.gz (matsim-libs)" : name,
+        kind,
+        bytes,
+        url: net,
+        example,
+        credit: example ? EXAMPLE_CREDIT : sourceCredit(net),
+      });
+      if (geometry) setGeometry(geometry);
+      if (example) clearLink();
       run();
     } catch (err) {
-      if (state.source) return;
-      setStatus(`Das Beispielnetz ließ sich nicht laden (${err.message}). Lade ein eigenes Netz.`, "error");
+      if (ctrl.signal.aborted) return;
+      loading = null;
+      const what = example ? "Das Beispielnetz" : name;
+      setStatus(`${what} ließ sich nicht laden (${reason(err)}).${state.source ? "" : " Lade ein eigenes Netz."}`, "error");
     }
   }
+
+  async function loadGeometryFromUrl(url) {
+    loading?.abort();
+    const ctrl = (loading = new AbortController());
+    const name = fileName(url);
+    try {
+      const bytes = await fetchBytes(url, name, ctrl.signal);
+      if (ctrl.signal.aborted) return;
+      loading = null;
+      setGeometry({ name, url, bytes });
+      run();
+    } catch (err) {
+      if (ctrl.signal.aborted) return;
+      loading = null;
+      setStatus(`${name} ließ sich nicht laden (${reason(err)}).`, "error");
+    }
+  }
+
+  const sourceCredit = (url) => {
+    const svn = url.startsWith(SVN_ROOT);
+    const href = svn ? folderOf(url) : url;
+    return `Netz: <a href="${esc(href)}" target="_blank" rel="noopener">${svn ? "VSP public-svn" : esc(new URL(url).host)}</a>`;
+  };
+
+  // ---------- VSP-SVN ----------
+  const svn = { url: null, entries: [], token: 0, start: null };
+  const KIND_LABEL = { net: "Netz", parquet: "GeoParquet", geo: "Geometrien" };
+  const natural = new Intl.Collator("de", { numeric: true, sensitivity: "base" });
+
+  function classify(name) {
+    if (/linkGeometr[^/]*\.csv(\.gz)?$/i.test(name)) return "geo";
+    if (/\.parquet$/i.test(name)) return "parquet";
+    if (/\.xml(\.gz)?$/i.test(name) && /network/i.test(name) && !/lanes|change/i.test(name)) return "net";
+    return null;
+  }
+
+  /** Entries of an SVN folder (Apache's HTML listing, or the XML index some servers send). */
+  async function listFolder(url) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const doc = new DOMParser().parseFromString(await res.text(), "text/html");
+    const hrefs = [...doc.querySelectorAll("li > a[href]")].map((a) => a.getAttribute("href"));
+    for (const el of doc.querySelectorAll("index > dir[href], index > file[href]")) {
+      const href = el.getAttribute("href");
+      hrefs.push(el.localName === "dir" && !href.endsWith("/") ? `${href}/` : href);
+    }
+    const entries = [];
+    for (const href of hrefs) {
+      let abs;
+      try { abs = new URL(href, url).href; } catch { continue; }
+      if (!abs.startsWith(url) || abs === url) continue; // only what lies inside this folder
+      let name = abs.slice(url.length).replace(/\/$/, "");
+      try { name = decodeURIComponent(name); } catch { /* keep it encoded */ }
+      if (!name || name.includes("/")) continue;
+      const dir = abs.endsWith("/");
+      entries.push({ name, url: abs, dir, kind: dir ? "dir" : classify(name) });
+    }
+    return entries.sort((a, b) => b.dir - a.dir || natural.compare(a.name, b.name));
+  }
+
+  /** The geometry file that belongs to a network: the one whose name shares the most with it. */
+  function matchGeometry(netName, entries) {
+    let best = null;
+    let bestLength = -1;
+    for (const e of entries) {
+      if (e.kind !== "geo") continue;
+      let n = 0;
+      while (n < netName.length && netName[n] === e.name[n]) n++;
+      if (n > bestLength) [best, bestLength] = [e, n];
+    }
+    return best;
+  }
+
+  async function findGeometry(netUrl) {
+    try {
+      return matchGeometry(fileName(netUrl), await listFolder(folderOf(netUrl)));
+    } catch {
+      return null;
+    }
+  }
+
+  function svnNote(text) {
+    $("svn-note").textContent = text ?? "";
+    $("svn-note").hidden = !text;
+  }
+
+  async function openFolder(url) {
+    if (!url.endsWith("/")) url += "/";
+    const token = ++svn.token;
+    const li = document.createElement("li");
+    li.className = "empty";
+    li.textContent = "Ordner laden …";
+    $("svn-list").replaceChildren(li);
+    svnNote(null);
+    try {
+      const entries = await listFolder(url);
+      if (token !== svn.token) return;
+      Object.assign(svn, { url, entries });
+      store.set("kachelwerk.svn", url);
+      renderSvn();
+    } catch (err) {
+      if (token !== svn.token) return;
+      Object.assign(svn, { url, entries: [] });
+      renderSvn();
+      svnNote(`Der Ordner ließ sich nicht laden (${reason(err)}).`);
+    }
+  }
+
+  function renderSvn() {
+    const inRoot = svn.url.startsWith(SVN_ROOT);
+    const base = inRoot ? SVN_ROOT : new URL("/", svn.url).href;
+    const crumb = (label, url) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = label;
+      b.dataset.url = url;
+      return b;
+    };
+    const crumbs = [crumb(inRoot ? "countries/de" : new URL(svn.url).host, base)];
+    let at = base;
+    for (const part of svn.url.slice(base.length).split("/").filter(Boolean)) {
+      at += `${part}/`;
+      const sep = document.createElement("span");
+      sep.textContent = "/";
+      let label = part;
+      try { label = decodeURIComponent(part); } catch { /* keep it encoded */ }
+      crumbs.push(sep, crumb(label, at));
+    }
+    $("svn-crumbs").replaceChildren(...crumbs);
+
+    const items = [];
+    const item = (e) => {
+      const li = document.createElement("li");
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = e.dir ? "dir" : "file";
+      Object.assign(b.dataset, { url: e.url, kind: e.kind });
+      const n = document.createElement("span");
+      n.className = "n";
+      n.textContent = e.dir && e.name !== ".." ? `${e.name}/` : e.name;
+      b.append(n);
+      if (KIND_LABEL[e.kind]) b.append(chip(KIND_LABEL[e.kind]));
+      li.append(b);
+      return li;
+    };
+    if (svn.url !== base) items.push(item({ name: "..", url: new URL("../", svn.url).href, dir: true, kind: "dir" }));
+    let hidden = 0;
+    for (const e of svn.entries) {
+      if (e.dir || e.kind) items.push(item(e));
+      else hidden++;
+    }
+    if (items.length === 0) {
+      const li = document.createElement("li");
+      li.className = "empty";
+      li.textContent = "Leer";
+      items.push(li);
+    }
+    $("svn-list").replaceChildren(...items);
+    $("svn-list").scrollTop = 0;
+    svnNote(hidden ? `${de(hidden)} weitere Datei${hidden === 1 ? "" : "en"} ohne Netz ausgeblendet.` : null);
+    const geos = svn.entries.filter((e) => e.kind === "geo");
+    $("svn-geo-row").hidden = geos.length === 0;
+    $("svn-geo-name").textContent = geos.length === 1 ? geos[0].name : "die passende Datei aus diesem Ordner";
+  }
+
+  $("svn").addEventListener("toggle", () => {
+    if ($("svn").open && !svn.url) openFolder(svn.start ?? store.get("kachelwerk.svn") ?? SVN_ROOT);
+  });
+  $("svn-crumbs").addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (b) openFolder(b.dataset.url);
+  });
+  $("svn-list").addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    const { url, kind } = b.dataset;
+    if (kind === "dir") return openFolder(url);
+    if (kind === "geo") {
+      if (state.source?.kind !== "matsim") return svnNote("Link-Geometrien gehören zu einem MATSim-Netz. Wähle zuerst das Netz.");
+      return loadGeometryFromUrl(url);
+    }
+    const entry = svn.entries.find((x) => x.url === url);
+    const geo = kind === "net" && $("svn-geo").checked ? matchGeometry(entry.name, svn.entries) : null;
+    loadFromUrl({ net: url, geo: geo?.url ?? null });
+  });
+  $("svn-url-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const value = $("svn-url").value.trim();
+    if (!value) return;
+    let url;
+    try {
+      url = new URL(value, svn.url ?? SVN_ROOT).href; // a path counts from the open folder
+    } catch {
+      return svnNote("Das ist kein gültiger Pfad und keine gültige Adresse.");
+    }
+    if (url.endsWith("/")) openFolder(url);
+    else loadFromUrl({ net: url, geo: "auto" });
+  });
+
+  // ---------- links to a network ----------
+  // ?net=<path below countries/de/ or a full address>&geo=<file next to it, a full address, or 0>&crs=…
+  function updateLink() {
+    const src = state.source;
+    if (!src?.url || src.example) return clearLink();
+    const p = new URLSearchParams();
+    p.set("net", src.url.startsWith(SVN_ROOT) ? src.url.slice(SVN_ROOT.length) : src.url);
+    const g = state.geometry;
+    if (!g) p.set("geo", "0");
+    else if (g.url) p.set("geo", g.url.startsWith(folderOf(src.url)) ? g.url.slice(folderOf(src.url).length) : g.url);
+    const crs = $("crs").value.trim();
+    if (crs && crs !== DEFAULT_CRS) p.set("crs", crs);
+    history.replaceState(null, "", `${location.pathname}?${p.toString().replaceAll("%2F", "/")}`);
+  }
+  function clearLink() {
+    if (location.search) history.replaceState(null, "", location.pathname);
+  }
+  $("crs").addEventListener("change", () => {
+    if (state.source?.url && !state.source.example) updateLink();
+  });
 
   // ---------- saving ----------
   const CRC = new Uint32Array(256).map((_, n) => {
@@ -828,7 +1431,25 @@ details.log pre {
     }
   });
 
-  loadExample();
+  // ---------- start: the network from the link, else the example ----------
+  const params = new URLSearchParams(location.search);
+  if (params.get("crs")) $("crs").value = params.get("crs");
+  let linked = null;
+  try {
+    if (params.get("net")) linked = new URL(params.get("net"), SVN_ROOT).href;
+  } catch { /* not an address */ }
+  if (linked) {
+    const g = params.get("geo");
+    let geo = "auto";
+    if (g === "0" || g === "") geo = null;
+    else if (g !== null) {
+      try { geo = new URL(g, folderOf(linked)).href; } catch { geo = null; }
+    }
+    if (linked.startsWith(SVN_ROOT)) svn.start = folderOf(linked);
+    loadFromUrl({ net: linked, geo });
+  } else {
+    loadFromUrl({ net: EXAMPLE_URL, example: true });
+  }
 })();
 </script>
 </body>

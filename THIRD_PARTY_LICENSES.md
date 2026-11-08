@@ -19,6 +19,9 @@ Nicht in diesem Repository ist das Beispielnetz: ein Ausschnitt aus dem
 [MATSim-Szenario Kelheim](https://github.com/matsim-scenarios/matsim-kelheim) aus
 [matsim-libs](https://github.com/matsim-org/matsim-libs/tree/033fd8ba25af5075ed645cb1972aa67873316237/examples/scenarios/kelheim)
 unter [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/). Die Seite lädt es zur Laufzeit von GitHub.
+Ebenso wenig die Hintergrundkarte von [OpenFreeMap](https://openfreemap.org/) (OpenMapTiles, Daten
+© OpenStreetMap-Mitwirkende) und die Netze aus dem VSP-SVN: Beides lädt die Seite zur Laufzeit, die
+Quellen stehen in der Karte unten rechts.
 
 ## manby und tippecanoe-rs
 
