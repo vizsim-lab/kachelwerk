@@ -1,0 +1,835 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MATSim Kachelwerk</title>
+<meta name="description" content="Macht aus einem MATSim-Netz oder GeoParquet Vektorkacheln (PMTiles), komplett im Browser mit manby als WebAssembly.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f4ea3'/%3E%3Cpath d='M7 23 13 11l6 8 6-10' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='25' cy='9' r='3' fill='%23f2b705'/%3E%3C/svg%3E">
+<!-- Schriften und Bibliotheken liegen in vendor/: Beim Öffnen gehen keine Anfragen an Schrift- oder CDN-Dienste. -->
+<link rel="stylesheet" href="vendor/fonts/fonts.css">
+<link rel="stylesheet" href="vendor/maplibre-gl/maplibre-gl.css">
+<style>
+/* Layout: one-screen workbench. The three steps run down a column on the left and drive the map on the right; on phones the map sits on top and the steps scroll below it. */
+:root {
+  --bg: #f2f4f7;
+  --surface: #ffffff;
+  --fg: #17202c;
+  --muted: #586373;
+  --line: #d5dbe3;
+  --accent: #1f4ea3;
+  --accent-ink: #ffffff;
+  --signal: #f2b705;
+  --danger: #b3261e;
+  --map-bg: #e8ecf0;
+  --ramp-0: #d3c8a6;
+  --ramp-1: #e2a13d;
+  --ramp-2: #c0522b;
+  --ramp-3: #173f8f;
+  --font-display: "Barlow Semi Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --font-body: "Barlow", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1520;
+    --surface: #161e2b;
+    --fg: #e4e9f0;
+    --muted: #97a2b3;
+    --line: #283446;
+    --accent: #f2c230;
+    --accent-ink: #17130a;
+    --signal: #f2c230;
+    --danger: #ff8a80;
+    --map-bg: #0b1119;
+    --ramp-0: #3b4859;
+    --ramp-1: #8f6a33;
+    --ramp-2: #e0952f;
+    --ramp-3: #ffd75a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1520;
+  --surface: #161e2b;
+  --fg: #e4e9f0;
+  --muted: #97a2b3;
+  --line: #283446;
+  --accent: #f2c230;
+  --accent-ink: #17130a;
+  --signal: #f2c230;
+  --danger: #ff8a80;
+  --map-bg: #0b1119;
+  --ramp-0: #3b4859;
+  --ramp-1: #8f6a33;
+  --ramp-2: #e0952f;
+  --ramp-3: #ffd75a;
+  color-scheme: dark;
+}
+
+html { height: 100%; box-sizing: border-box; }
+*, *::before, *::after { box-sizing: inherit; }
+body {
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 15px/1.45 var(--font-body);
+}
+[hidden] { display: none !important; }
+
+.app { display: grid; grid-template-columns: minmax(320px, 380px) minmax(0, 1fr); height: 100%; }
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  overflow-y: auto;
+  border-right: 1px solid var(--line);
+  padding-block: 20px 28px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: 18px;
+}
+.mapwrap { position: relative; min-width: 0; background: var(--map-bg); }
+#map { position: absolute; inset: 0; }
+
+/* the one loud thing: a name plate in the manner of a German Autobahn sign */
+.plate {
+  align-self: flex-start;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 14px 9px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow: inset 0 0 0 2px var(--accent), inset 0 0 0 3.5px var(--accent-ink);
+}
+.plate h1 {
+  margin: 0;
+  font: 700 25px/1 var(--font-display);
+  letter-spacing: 0.01em;
+  text-wrap: balance;
+}
+.plate span { font: 500 12.5px/1.2 var(--font-display); letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.85; }
+.lede { margin: -8px 0 0; color: var(--muted); font-size: 14px; max-width: 34em; }
+
+.step { display: flex; flex-direction: column; gap: 10px; }
+.step h2 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  font: 600 13px/1 var(--font-display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.step h2 b {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1.5px solid var(--muted);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0;
+  color: var(--fg);
+}
+
+.drop {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px;
+  border: 1.5px dashed var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color 120ms, background-color 120ms;
+}
+.drop:hover, .drop.over { border-color: var(--accent); }
+.drop:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.drop strong { font-weight: 600; }
+.drop small { color: var(--muted); font-size: 13px; }
+.drop input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.source { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 14px; min-width: 0; }
+.source .name { font-weight: 600; overflow-wrap: anywhere; }
+.chip {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 99px;
+  border: 1px solid var(--line);
+  font: 500 11.5px/1.5 var(--font-display);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.chip.example { border-color: var(--signal); color: var(--fg); }
+.credit { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+.credit a, .foot a { color: inherit; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); text-underline-offset: 2px; }
+.credit a:hover, .foot a:hover { color: var(--fg); text-decoration-color: currentColor; }
+.foot { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+.foot p { margin: 0; }
+
+.fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.field.wide { grid-column: 1 / -1; }
+.field label { font: 600 12.5px/1.2 var(--font-display); letter-spacing: 0.04em; color: var(--muted); }
+.field input[type="text"], .field select {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--fg);
+  font: 14px/1.3 var(--font-mono);
+}
+.field input:focus-visible, .field select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.field small { color: var(--muted); font-size: 12.5px; }
+.check { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; }
+.check input { margin-top: 3px; accent-color: var(--accent); }
+.check code { font: 12.5px var(--font-mono); color: var(--muted); }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font: 600 15px/1 var(--font-display);
+  letter-spacing: 0.03em;
+  cursor: pointer;
+}
+.btn:disabled { opacity: 0.5; cursor: default; }
+.btn.secondary { background: transparent; color: var(--fg); box-shadow: inset 0 0 0 1.5px var(--line); }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+
+.status { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.status[data-state="error"] .text { color: var(--danger); }
+.bar { height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; background: var(--signal); transition: width 150ms linear; }
+.bar.indeterminate i { width: 35%; animation: slide 1.1s ease-in-out infinite; }
+@keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
+
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; margin: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--line); }
+.stats div { display: flex; flex-direction: column; gap: 2px; padding: 9px 10px; background: var(--surface); min-width: 0; }
+.stats dt { font: 600 11.5px/1.2 var(--font-display); letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
+.stats dd { margin: 0; font: 500 16px/1.25 var(--font-mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.note { margin: 0; color: var(--muted); font-size: 13px; }
+details.log summary { cursor: pointer; font: 600 13px/1.4 var(--font-display); letter-spacing: 0.04em; color: var(--muted); }
+details.log pre {
+  margin: 8px 0 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  font: 12px/1.5 var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.legend {
+  position: absolute;
+  left: max(12px, env(safe-area-inset-left, 0px));
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: min(260px, calc(100% - 24px));
+  padding: 9px 11px 8px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  border: 1px solid var(--line);
+  font-size: 12.5px;
+}
+.legend .title { font: 600 13px/1.2 var(--font-display); letter-spacing: 0.03em; }
+.legend .ramp { height: 7px; border-radius: 4px; background: linear-gradient(90deg, var(--ramp-0), var(--ramp-1), var(--ramp-2), var(--ramp-3)); }
+.legend .ticks { display: flex; justify-content: space-between; font: 11.5px var(--font-mono); font-variant-numeric: tabular-nums; color: var(--muted); }
+.maptag {
+  position: absolute;
+  right: max(12px, env(safe-area-inset-right, 0px));
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  color: var(--muted);
+  font: 500 11.5px/1.4 var(--font-display);
+  letter-spacing: 0.04em;
+}
+.busy {
+  position: absolute;
+  top: calc(12px + env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 120px);
+  padding: 6px 12px;
+  border-radius: 99px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  font: 500 13px/1.3 var(--font-display);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.maplibregl-ctrl-top-right { right: env(safe-area-inset-right, 0px); top: env(safe-area-inset-top, 0px); }
+.maplibregl-popup-content { background: var(--surface); color: var(--fg); border-radius: 8px; padding: 10px 12px; font: 12.5px/1.45 var(--font-body); box-shadow: 0 4px 18px rgb(0 0 0 / 0.18); }
+.maplibregl-popup-anchor-bottom .maplibregl-popup-tip { border-top-color: var(--surface); }
+.maplibregl-popup-anchor-top .maplibregl-popup-tip { border-bottom-color: var(--surface); }
+.maplibregl-popup-anchor-left .maplibregl-popup-tip { border-right-color: var(--surface); }
+.maplibregl-popup-anchor-right .maplibregl-popup-tip { border-left-color: var(--surface); }
+.maplibregl-popup-close-button { color: var(--muted); font-size: 18px; padding: 0 6px; }
+.props { border-collapse: collapse; }
+.props th { padding: 1px 10px 1px 0; text-align: left; font: 600 12px/1.4 var(--font-display); letter-spacing: 0.03em; color: var(--muted); vertical-align: top; }
+.props td { padding: 1px 0; font: 12px/1.4 var(--font-mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+
+@media (max-width: 860px) {
+  html, body { height: auto; }
+  .app { display: flex; flex-direction: column; height: auto; }
+  .mapwrap { order: -1; height: 58vh; height: 58svh; min-height: 300px; }
+  .panel { overflow: visible; border-right: 0; padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+}
+@media (max-width: 520px) {
+  /* the legend takes the bottom edge; the tag moves to the free top-left corner */
+  .maptag { top: calc(12px + env(safe-area-inset-top, 0px)); bottom: auto; left: max(12px, env(safe-area-inset-left, 0px)); right: auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bar.indeterminate i { animation: none; width: 100%; opacity: 0.5; }
+  .drop, .bar i { transition: none; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="panel">
+    <div class="plate"><h1>MATSim Kachelwerk</h1><span>manby · WebAssembly · PMTiles</span></div>
+    <p class="lede">Macht aus einem MATSim-Netz Vektorkacheln, komplett im Browser: Nichts verlässt das Gerät.</p>
+
+    <section class="step" aria-labelledby="h-net">
+      <h2 id="h-net"><b>1</b>Netz</h2>
+      <label class="drop" id="drop" for="file">
+        <strong>Datei wählen oder hierher ziehen</strong>
+        <small>GeoParquet (<code>.parquet</code>) oder MATSim-Netz (<code>network.xml</code>, <code>.xml.gz</code>)</small>
+        <input type="file" id="file" accept=".parquet,.xml,.gz,application/gzip,application/xml,text/xml">
+      </label>
+      <div class="source" id="source" aria-live="polite"><span class="note">Noch keine Datei geladen.</span></div>
+      <p class="credit" id="credit" hidden>
+        Beispielnetz: Ausschnitt aus dem <a href="https://github.com/matsim-scenarios/matsim-kelheim" target="_blank" rel="noopener">MATSim-Szenario Kelheim</a>,
+        Datei <code>network-with-pt.xml.gz</code> aus <a href="https://github.com/matsim-org/matsim-libs/tree/033fd8ba25af5075ed645cb1972aa67873316237/examples/scenarios/kelheim" target="_blank" rel="noopener">matsim-libs</a>,
+        Lizenz <a href="https://creativecommons.org/licenses/by-nc/4.0/deed.de" target="_blank" rel="noopener">CC BY-NC 4.0</a>.
+        Die Seite lädt es von GitHub und wandelt es hier in Kacheln um.
+      </p>
+    </section>
+
+    <section class="step" aria-labelledby="h-tile">
+      <h2 id="h-tile"><b>2</b>Kacheln</h2>
+      <div class="fields">
+        <div class="field">
+          <label for="crs">Koordinatensystem</label>
+          <input type="text" id="crs" value="EPSG:25832" spellcheck="false" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="maxzoom">Max. Zoomstufe</label>
+          <select id="maxzoom">
+            <option value="auto" selected>automatisch (-zg)</option>
+            <option value="10">10</option>
+            <option value="11">11</option>
+            <option value="12">12</option>
+            <option value="13">13</option>
+            <option value="14">14</option>
+            <option value="15">15</option>
+            <option value="16">16</option>
+          </select>
+        </div>
+        <div class="field wide">
+          <small>Gilt, wenn die Datei selbst kein CRS nennt. MATSim-Netze mit dem Attribut <code>coordinateReferenceSystem</code> und GeoParquet mit CRS bringen ihres mit.</small>
+        </div>
+        <div class="field">
+          <label for="layer">Layername</label>
+          <input type="text" id="layer" value="links" spellcheck="false" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="extra">Weitere tippecanoe-Optionen</label>
+          <input type="text" id="extra" value="" placeholder="z. B. -Z6" spellcheck="false" autocomplete="off">
+        </div>
+        <label class="check field wide" for="drop-densest">
+          <input type="checkbox" id="drop-densest" checked>
+          <span>Dichteste Features weglassen, wenn eine Kachel zu groß wird <code>--drop-densest-as-needed</code></span>
+        </label>
+      </div>
+      <div class="row">
+        <button class="btn" id="run" type="button" disabled>Kacheln</button>
+      </div>
+    </section>
+
+    <section class="step" aria-labelledby="h-result">
+      <h2 id="h-result"><b>3</b>Ergebnis</h2>
+      <div class="status" id="status" data-state="idle" aria-live="polite">
+        <span class="text" id="status-text">Wartet auf ein Netz.</span>
+        <div class="bar" id="bar" hidden><i></i></div>
+      </div>
+      <dl class="stats" id="stats" hidden>
+        <div><dt>Kacheln</dt><dd id="st-tiles">–</dd></div>
+        <div><dt>Zoom</dt><dd id="st-zoom">–</dd></div>
+        <div><dt>Größe</dt><dd id="st-size">–</dd></div>
+        <div><dt>Links</dt><dd id="st-features">–</dd></div>
+        <div><dt>Dauer</dt><dd id="st-time">–</dd></div>
+        <div><dt>Speicher</dt><dd id="st-mem">–</dd></div>
+      </dl>
+      <div class="fields" id="style-fields" hidden>
+        <div class="field wide">
+          <label for="color-by">Farbe nach</label>
+          <select id="color-by"></select>
+        </div>
+      </div>
+      <div class="row" id="save-row" hidden>
+        <button class="btn secondary" id="save" type="button">PMTiles speichern (ZIP)</button>
+        <a class="btn secondary" id="save-link" hidden>PMTiles speichern</a>
+      </div>
+      <p class="note" id="save-note" hidden></p>
+      <details class="log">
+        <summary>Protokoll von manby</summary>
+        <pre id="log"></pre>
+      </details>
+    </section>
+
+    <footer class="foot">
+      <p>Kacheln mit <a href="https://github.com/birkskyum/manby" target="_blank" rel="noopener">manby</a> als WebAssembly, Karte mit <a href="https://maplibre.org/" target="_blank" rel="noopener">MapLibre GL JS</a>.
+      <a href="https://github.com/vizsim-lab/kachelwerk" target="_blank" rel="noopener">Quellcode</a> und <a href="https://github.com/vizsim-lab/kachelwerk/blob/main/THIRD_PARTY_LICENSES.md" target="_blank" rel="noopener">Lizenzen</a> auf GitHub.</p>
+    </footer>
+  </aside>
+
+  <main class="mapwrap">
+    <div id="map" role="region" aria-label="Kartenvorschau der Kacheln"></div>
+    <div class="busy" id="busy" hidden>Kacheln …</div>
+    <div class="legend" id="legend" hidden>
+      <span class="title" id="legend-title"></span>
+      <div class="ramp"></div>
+      <div class="ticks" id="legend-ticks"></div>
+    </div>
+    <div class="maptag">Ohne Hintergrundkarte</div>
+  </main>
+</div>
+
+<script src="vendor/maplibre-gl/maplibre-gl.js"></script>
+<script src="vendor/pmtiles/pmtiles.js"></script>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const de = (n, digits = 0) => Number(n).toLocaleString("de-DE", { maximumFractionDigits: digits, minimumFractionDigits: digits });
+  const mb = (bytes) => `${de(bytes / 1048576, bytes < 10485760 ? 1 : 0)} MB`;
+  const UNITS = { freespeed: "m/s", freespeed_kmh: "km/h", capacity: "Fz/h", permlanes: "Fahrstreifen", length: "m" };
+  const PREFERRED = ["freespeed_kmh", "freespeed", "capacity", "permlanes", "length"];
+  // MATSim road classes: Tempo 30, innerorts 50, Landstraße 80, Autobahn 120
+  const PRESETS = {
+    freespeed_kmh: [30, 50, 80, 120],
+    freespeed: [8.33, 13.89, 22.22, 33.33],
+    capacity: [600, 1200, 2400, 4800],
+    permlanes: [1, 2, 3, 4],
+  };
+  const RAMP = ["--ramp-0", "--ramp-1", "--ramp-2", "--ramp-3"];
+
+  const state = { source: null, bytes: null, name: "netz", attrs: [], attr: null, layer: "links", runs: 0, running: false };
+
+  // ---------- map ----------
+  const protocol = new pmtiles.Protocol({ metadata: true });
+  maplibregl.addProtocol("pmtiles", protocol.tile);
+  const map = new maplibregl.Map({
+    container: "map",
+    style: { version: 8, sources: {}, layers: [{ id: "bg", type: "background", paint: { "background-color": css("--map-bg") } }] },
+    center: [11.88, 48.9],
+    zoom: 9,
+    attributionControl: false,
+    dragRotate: false,
+    pitchWithRotate: false,
+  });
+  map.touchZoomRotate.disableRotation();
+  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+  const mapReady = new Promise((resolve) => map.once("load", resolve));
+
+  function colorExpression() {
+    const a = state.attr;
+    if (!a || a.stops.length < 2) return css("--ramp-3");
+    const colors = RAMP.map(css);
+    const expr = ["interpolate", ["linear"], ["to-number", ["get", a.attribute], a.stops[0]]];
+    a.stops.forEach((stop, i) => expr.push(stop, colors[Math.round((i * 3) / (a.stops.length - 1))]));
+    return expr;
+  }
+
+  /** Color stops: the road classes for MATSim's own attributes, else spread over the values seen. */
+  function stopsFor(name, min, max, values) {
+    if (PRESETS[name]) return PRESETS[name];
+    let s = values.length >= 4
+      ? [0.1, 0.4, 0.7, 0.95].map((q) => values[Math.min(values.length - 1, Math.floor(q * values.length))])
+      : [0, 1, 2, 3].map((k) => min + ((max - min) * k) / 3);
+    s = s.filter((x, i, all) => i === 0 || x > all[i - 1]);
+    return max > min ? s : [];
+  }
+
+  function applyTheme() {
+    if (!map.getLayer("bg")) return;
+    map.setPaintProperty("bg", "background-color", css("--map-bg"));
+    if (map.getLayer("net")) map.setPaintProperty("net", "line-color", colorExpression());
+  }
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyTheme);
+  new MutationObserver(applyTheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+  function numericAttributes(meta, layer) {
+    const layers = meta?.tilestats?.layers ?? [];
+    const l = layers.find((x) => x.layer === layer) ?? layers[0];
+    const attrs = (l?.attributes ?? [])
+      .filter((x) => x.type === "number" && Number.isFinite(x.min) && Number.isFinite(x.max))
+      .map((x) => {
+        const values = (x.values ?? []).filter(Number.isFinite).sort((p, q) => p - q);
+        return { attribute: x.attribute, min: x.min, max: x.max, stops: stopsFor(x.attribute, x.min, x.max, values) };
+      });
+    attrs.sort((p, q) => {
+      const ip = PREFERRED.indexOf(p.attribute), iq = PREFERRED.indexOf(q.attribute);
+      return (ip < 0 ? 99 : ip) - (iq < 0 ? 99 : iq) || p.attribute.localeCompare(q.attribute);
+    });
+    return { attrs, count: l?.count };
+  }
+
+  function renderLegend() {
+    const a = state.attr;
+    $("legend").hidden = !a || a.stops.length < 2;
+    if ($("legend").hidden) return;
+    const unit = UNITS[a.attribute] ? ` (${UNITS[a.attribute]})` : "";
+    $("legend-title").textContent = a.attribute + unit;
+    const span = a.stops[a.stops.length - 1] - a.stops[0];
+    const digits = span < 10 && !Number.isInteger(a.stops[0]) ? 1 : 0;
+    $("legend-ticks").replaceChildren(...a.stops.map((stop, i) => {
+      const t = document.createElement("span");
+      const prefix = i === a.stops.length - 1 && a.max > stop ? "≥ " : i === 0 && a.min < stop ? "≤ " : "";
+      t.textContent = prefix + de(stop, digits);
+      return t;
+    }));
+  }
+
+  async function show(bytes, info) {
+    await mapReady;
+    state.runs += 1;
+    const file = new File([bytes], `${state.name}-${state.runs}.pmtiles`);
+    const archive = new pmtiles.PMTiles(new pmtiles.FileSource(file));
+    protocol.add(archive);
+    const header = await archive.getHeader();
+    const meta = (await archive.getMetadata()) ?? {};
+    const { attrs, count } = numericAttributes(meta, state.layer);
+    state.attrs = attrs;
+    state.attr = attrs[0] ?? null;
+
+    if (map.getLayer("net")) map.removeLayer("net");
+    if (map.getSource("net")) map.removeSource("net");
+    map.addSource("net", { type: "vector", url: `pmtiles://${archive.source.getKey()}` });
+    map.addLayer({
+      id: "net",
+      type: "line",
+      source: "net",
+      "source-layer": meta.vector_layers?.[0]?.id ?? state.layer,
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": colorExpression(),
+        "line-width": ["interpolate", ["exponential", 1.6], ["zoom"], 6, 0.35, 10, 0.9, 13, 1.9, 16, 4.5],
+      },
+    });
+    map.fitBounds([[header.minLon, header.minLat], [header.maxLon, header.maxLat]], { padding: 36, duration: 0 });
+
+    const select = $("color-by");
+    select.replaceChildren(...attrs.map((a) => new Option(a.attribute + (UNITS[a.attribute] ? ` (${UNITS[a.attribute]})` : ""), a.attribute)));
+    select.append(new Option("einfarbig", ""));
+    select.value = state.attr?.attribute ?? "";
+    $("style-fields").hidden = false;
+    renderLegend();
+
+    $("st-tiles").textContent = de(header.numAddressedTiles);
+    $("st-zoom").textContent = `${header.minZoom}–${header.maxZoom}`;
+    $("st-size").textContent = mb(bytes.length);
+    $("st-features").textContent = info.links != null ? de(info.links) : count != null ? de(count) : "–";
+    $("st-time").textContent = `${de((info.msStep1 + info.msTiling) / 1000, 1)} s`;
+    $("st-mem").textContent = mb(info.memory);
+    $("stats").hidden = false;
+  }
+
+  $("color-by").addEventListener("change", (e) => {
+    state.attr = state.attrs.find((a) => a.attribute === e.target.value) ?? null;
+    if (map.getLayer("net")) map.setPaintProperty("net", "line-color", colorExpression());
+    renderLegend();
+  });
+
+  const popup = new maplibregl.Popup({ closeButton: true, maxWidth: "300px" });
+  map.on("click", (e) => {
+    if (!map.getLayer("net")) return;
+    const box = [[e.point.x - 5, e.point.y - 5], [e.point.x + 5, e.point.y + 5]];
+    const f = map.queryRenderedFeatures(box, { layers: ["net"] })[0];
+    if (!f) return popup.remove();
+    const table = document.createElement("table");
+    table.className = "props";
+    for (const [k, v] of Object.entries(f.properties)) {
+      const tr = table.insertRow();
+      const th = document.createElement("th");
+      th.textContent = k;
+      const td = tr.insertCell();
+      td.textContent = (typeof v === "number" ? de(v, Number.isInteger(v) ? 0 : 2) : String(v)) + (UNITS[k] ? ` ${UNITS[k]}` : "");
+      tr.prepend(th);
+    }
+    popup.setLngLat(e.lngLat).setDOMContent(table).addTo(map);
+  });
+  map.on("mousemove", "net", () => (map.getCanvas().style.cursor = "pointer"));
+  map.on("mouseleave", "net", () => (map.getCanvas().style.cursor = ""));
+
+  // ---------- worker ----------
+  const logEl = $("log");
+  const log = (line) => {
+    logEl.textContent += (logEl.textContent ? "\n" : "") + line;
+    logEl.scrollTop = logEl.scrollHeight;
+  };
+
+  function setStatus(text, kind = "busy", pct = null) {
+    $("status").dataset.state = kind;
+    $("status-text").textContent = text;
+    const bar = $("bar");
+    bar.hidden = kind !== "busy";
+    bar.classList.toggle("indeterminate", pct === null);
+    bar.firstElementChild.style.width = pct === null ? "" : `${pct}%`;
+    $("busy").hidden = kind !== "busy";
+    $("busy").textContent = text;
+  }
+
+  let worker;
+  function startWorker() {
+    worker = new Worker(new URL("worker.js", location.href), { type: "module" });
+    worker.onmessage = async ({ data: m }) => {
+      if (m.type === "status") setStatus(m.text);
+      else if (m.type === "progress") setStatus(`Kacheln … ${de(m.pct, 0)} %`, "busy", m.pct);
+      else if (m.type === "log") log(m.line);
+      else if (m.type === "error") fail(m.message);
+      else if (m.type === "done") {
+        state.bytes = m.pmtiles;
+        try {
+          await show(m.pmtiles, m.info);
+          const secs = de((m.info.msStep1 + m.info.msTiling) / 1000, 1);
+          setStatus(`Fertig in ${secs} s${m.info.crs ? `, umprojiziert aus ${m.info.crs}` : ""}.`, "done");
+          offerSave();
+        } catch (err) {
+          fail(`Die Kacheln ließen sich nicht anzeigen: ${err.message}`);
+        }
+        finish();
+      }
+    };
+    worker.onerror = (e) => {
+      e.preventDefault();
+      fail(`Der Worker konnte nicht starten${e.message ? `: ${e.message}` : ""}. Ohne ihn läuft manby nicht.`);
+      worker.terminate();
+      worker = null;
+    };
+  }
+
+  function fail(message) {
+    const text = /Refused to compile|wasm-unsafe-eval|unsafe-eval/i.test(message)
+      ? "Diese Ansicht erlaubt kein WebAssembly. Selbst gehostet (z. B. auf GitHub Pages) läuft die Seite."
+      : message;
+    setStatus(text, "error");
+    finish();
+  }
+
+  function finish() {
+    state.running = false;
+    $("run").disabled = !state.source;
+  }
+
+  function run() {
+    if (!state.source || state.running) return;
+    if (!worker) startWorker();
+    state.running = true;
+    $("run").disabled = true;
+    $("save-row").hidden = true;
+    $("save-note").hidden = true;
+    logEl.textContent = "";
+    setStatus("Startet …");
+    const layer = $("layer").value.trim() || "links";
+    state.layer = layer;
+    const extra = $("extra").value.trim();
+    const bytes = state.source.bytes.slice();
+    worker.postMessage({
+      kind: state.source.kind,
+      bytes: bytes.buffer,
+      name: state.name,
+      layer,
+      crs: $("crs").value.trim() || null,
+      maxzoom: $("maxzoom").value,
+      dropDensest: $("drop-densest").checked,
+      extra: extra ? extra.split(/\s+/) : [],
+    }, [bytes.buffer]);
+  }
+  $("run").addEventListener("click", run);
+
+  // ---------- input ----------
+  function detectKind(name, bytes) {
+    const head = new TextDecoder().decode(bytes.subarray(0, 512));
+    if (head.startsWith("PAR1")) return "parquet";
+    if ((bytes[0] === 0x1f && bytes[1] === 0x8b) || /<network|<\?xml/.test(head)) return "matsim";
+    if (/\.parquet$/i.test(name)) return "parquet";
+    if (/\.xml(\.gz)?$/i.test(name)) return "matsim";
+    return null;
+  }
+
+  function setSource(src) {
+    state.source = src;
+    state.name = src.name.replace(/[^\w.-]+/g, "_") || "netz";
+    const box = $("source");
+    box.replaceChildren();
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = src.label;
+    const kind = document.createElement("span");
+    kind.className = "chip";
+    kind.textContent = src.kind === "parquet" ? "GeoParquet" : "MATSim-XML";
+    const size = document.createElement("span");
+    size.className = "note";
+    size.textContent = mb(src.bytes.length);
+    box.append(name, kind, size);
+    if (src.example) {
+      const ex = document.createElement("span");
+      ex.className = "chip example";
+      ex.textContent = "Beispiel";
+      box.append(ex);
+    }
+    $("credit").hidden = !src.example;
+    $("run").disabled = state.running;
+  }
+
+  async function takeFile(file) {
+    if (!file) return;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const kind = detectKind(file.name, bytes);
+    if (!kind) {
+      setStatus(`${file.name} ist weder GeoParquet noch ein MATSim-Netz.`, "error");
+      return;
+    }
+    setSource({ name: file.name.replace(/\.(xml\.gz|xml|gz|parquet)$/i, ""), label: file.name, kind, bytes });
+    run();
+  }
+  $("file").addEventListener("change", (e) => takeFile(e.target.files[0]));
+  const drop = $("drop");
+  drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+  drop.addEventListener("drop", (e) => {
+    e.preventDefault();
+    drop.classList.remove("over");
+    takeFile(e.dataTransfer.files[0]);
+  });
+
+  // Kelheim example from matsim-libs (CC BY-NC 4.0), fetched at runtime and not part of this
+  // repository. Pinned to one commit so that the file cannot change under the page.
+  const EXAMPLE_URL = "https://raw.githubusercontent.com/matsim-org/matsim-libs/033fd8ba25af5075ed645cb1972aa67873316237/examples/scenarios/kelheim/network-with-pt.xml.gz";
+
+  async function loadExample() {
+    setStatus("Beispielnetz von GitHub laden …");
+    try {
+      const res = await fetch(EXAMPLE_URL);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      if (state.source) return; // a file of one's own came first
+      setSource({ name: "kelheim", label: "Kelheim, network-with-pt.xml.gz (matsim-libs)", kind: "matsim", bytes, example: true });
+      run();
+    } catch (err) {
+      if (state.source) return;
+      setStatus(`Das Beispielnetz ließ sich nicht laden (${err.message}). Lade ein eigenes Netz.`, "error");
+    }
+  }
+
+  // ---------- saving ----------
+  const CRC = new Uint32Array(256).map((_, n) => {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    return c >>> 0;
+  });
+  function crc32(bytes) {
+    let c = 0xffffffff;
+    for (let i = 0; i < bytes.length; i++) c = CRC[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  }
+  /** A ZIP holding one stored (uncompressed) file: PMTiles tiles are gzipped already. */
+  function zipOne(filename, data) {
+    const name = new TextEncoder().encode(filename);
+    const now = new Date();
+    const time = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
+    const date = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+    const crc = crc32(data);
+    const local = new Uint8Array(30 + name.length);
+    const lv = new DataView(local.buffer);
+    lv.setUint32(0, 0x04034b50, true); lv.setUint16(4, 20, true); lv.setUint16(6, 0x0800, true);
+    lv.setUint16(8, 0, true); lv.setUint16(10, time, true); lv.setUint16(12, date, true);
+    lv.setUint32(14, crc, true); lv.setUint32(18, data.length, true); lv.setUint32(22, data.length, true);
+    lv.setUint16(26, name.length, true); local.set(name, 30);
+    const central = new Uint8Array(46 + name.length);
+    const cv = new DataView(central.buffer);
+    cv.setUint32(0, 0x02014b50, true); cv.setUint16(4, 20, true); cv.setUint16(6, 20, true);
+    cv.setUint16(8, 0x0800, true); cv.setUint16(10, 0, true); cv.setUint16(12, time, true);
+    cv.setUint16(14, date, true); cv.setUint32(16, crc, true); cv.setUint32(20, data.length, true);
+    cv.setUint32(24, data.length, true); cv.setUint16(28, name.length, true); cv.setUint32(42, 0, true);
+    central.set(name, 46);
+    const end = new Uint8Array(22);
+    const ev = new DataView(end.buffer);
+    ev.setUint32(0, 0x06054b50, true); ev.setUint16(8, 1, true); ev.setUint16(10, 1, true);
+    ev.setUint32(12, central.length, true); ev.setUint32(16, local.length + data.length, true);
+    return new Blob([local, data, central, end], { type: "application/zip" });
+  }
+
+  let downloads = null;
+  const inViewer = typeof window.claude?.use === "function";
+  if (inViewer) {
+    window.claude.use("downloads").then((d) => { downloads = d; offerSave(); }).catch(() => {});
+  }
+
+  function offerSave() {
+    if (!state.bytes) return;
+    const note = $("save-note");
+    if (inViewer) {
+      $("save").hidden = !downloads;
+      $("save-link").hidden = true;
+      $("save-row").hidden = !downloads;
+      note.hidden = !!downloads;
+      note.textContent = "Speichern ist in dieser Ansicht nicht verfügbar.";
+    } else {
+      // self-hosted: a plain download link
+      const link = $("save-link");
+      if (link.href) URL.revokeObjectURL(link.href);
+      link.href = URL.createObjectURL(new Blob([state.bytes]));
+      link.download = `${state.name}.pmtiles`;
+      link.hidden = false;
+      $("save").hidden = true;
+      $("save-row").hidden = false;
+    }
+  }
+
+  $("save").addEventListener("click", async () => {
+    if (!downloads || !state.bytes) return;
+    const note = $("save-note");
+    note.hidden = false;
+    note.textContent = "ZIP wird vorbereitet …";
+    try {
+      await downloads.save({ filename: `${state.name}.zip`, data: zipOne(`${state.name}.pmtiles`, state.bytes) });
+      note.textContent = `${state.name}.zip mit ${state.name}.pmtiles gespeichert.`;
+    } catch (err) {
+      note.textContent = err?.code === "declined"
+        ? "Nicht gespeichert."
+        : `Speichern ging nicht (${err?.code ?? err?.message ?? "unbekannt"}).`;
+    }
+  });
+
+  loadExample();
+})();
+</script>
+</body>
+</html>

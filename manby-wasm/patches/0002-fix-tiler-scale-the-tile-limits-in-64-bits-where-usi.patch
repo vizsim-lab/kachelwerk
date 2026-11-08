@@ -1,0 +1,117 @@
+From 8086bd6b5406e77d84c70850c02e30d554ec4cdb Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sun, 8 Nov 2026 10:31:50 +0000
+Subject: [PATCH 2/3] fix(tiler): scale the tile limits in 64 bits where usize
+ has 32
+
+tippecanoe scales the byte and feature limits, and the sizes it checks
+against them, by the counts of kept and skipped features in its 64-bit
+size_t. In a 32-bit usize, as on WebAssembly, the products wrap at a few
+thousand features and the 500 kilobyte limit drops to a few bytes, so
+every tile drops almost all of its features. The products are now made in
+u64, which changes nothing where usize has 64 bits.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018JFwoob6fHaD4i2xGpSuk7
+---
+ src/tiler/make.rs | 43 +++++++++++++++++++++++++++++--------------
+ 1 file changed, 29 insertions(+), 14 deletions(-)
+
+diff --git a/src/tiler/make.rs b/src/tiler/make.rs
+index 688d942..ac2f9b0 100644
+--- a/src/tiler/make.rs
++++ b/src/tiler/make.rs
+@@ -35,6 +35,14 @@ use super::util::*;
+ use crate::store::Attr;
+ use tippecanoe::plugin::filter_layers;
+ 
++/// `a * b / c` as tippecanoe computes it in its 64-bit `size_t`, wrapping as
++/// it does there. Where `usize` has 32 bits (WebAssembly), the product would
++/// wrap far sooner and shrink the size and feature limits to almost nothing.
++fn mul_div(a: usize, b: usize, c: usize) -> usize {
++    let r = (a as u64).wrapping_mul(b as u64) / c as u64;
++    usize::try_from(r).unwrap_or(usize::MAX)
++}
++
+ /// The thresholds for dropping features that a zoom level is using.
+ #[derive(Clone, Copy, Debug, PartialEq)]
+ pub struct Thresholds {
+@@ -1454,22 +1462,25 @@ pub fn make_tile(octx: &Ctx<'_>, ort: &ReadTile, mp: &MakeParams) -> MakeResult
+             if !sf_geom!().is_empty() {
+                 let mut adjusted_max_tile_size = max_tile_size;
+                 if lead_features_count > 0 {
+-                    adjusted_max_tile_size = adjusted_max_tile_size.wrapping_mul(
++                    adjusted_max_tile_size = mul_div(
++                        adjusted_max_tile_size,
+                         lead_features_count + other_multiplier_cluster_features_count,
+-                    ) / lead_features_count;
++                        lead_features_count,
++                    );
+                 }
+                 let mut adjusted_max_tile_features = max_tile_features;
+                 if lead_features_count > 0 {
+-                    adjusted_max_tile_features = adjusted_max_tile_features.wrapping_mul(
++                    adjusted_max_tile_features = mul_div(
++                        adjusted_max_tile_features,
+                         lead_features_count + other_multiplier_cluster_features_count,
+-                    ) / lead_features_count;
++                        lead_features_count,
++                    );
+                 }
+ 
+                 let mut adjusted_feature_count =
+                     lead_features_count + other_multiplier_cluster_features_count;
+                 if kept > 0 {
+-                    adjusted_feature_count =
+-                        adjusted_feature_count.wrapping_mul(skipped + kept) / kept;
++                    adjusted_feature_count = mul_div(adjusted_feature_count, skipped + kept, kept);
+                 }
+ 
+                 if too_many_bytes
+@@ -1579,15 +1590,19 @@ pub fn make_tile(octx: &Ctx<'_>, ort: &ReadTile, mp: &MakeParams) -> MakeResult
+         }
+         let mut adjusted_max_tile_size = max_tile_size;
+         if lead_features_count > 0 {
+-            adjusted_max_tile_size = adjusted_max_tile_size
+-                .wrapping_mul(lead_features_count + other_multiplier_cluster_features_count)
+-                / lead_features_count;
++            adjusted_max_tile_size = mul_div(
++                adjusted_max_tile_size,
++                lead_features_count + other_multiplier_cluster_features_count,
++                lead_features_count,
++            );
+         }
+         let mut adjusted_max_tile_features = max_tile_features;
+         if lead_features_count > 0 {
+-            adjusted_max_tile_features = adjusted_max_tile_features
+-                .wrapping_mul(lead_features_count + other_multiplier_cluster_features_count)
+-                / lead_features_count;
++            adjusted_max_tile_features = mul_div(
++                adjusted_max_tile_features,
++                lead_features_count + other_multiplier_cluster_features_count,
++                lead_features_count,
++            );
+         }
+ 
+         shared_nodes.sort();
+@@ -1939,7 +1954,7 @@ pub fn make_tile(octx: &Ctx<'_>, ort: &ReadTile, mp: &MakeParams) -> MakeResult
+ 
+         let mut adjusted_feature_count = feature_count;
+         if kept > 0 {
+-            adjusted_feature_count = adjusted_feature_count.wrapping_mul(skipped + kept) / kept;
++            adjusted_feature_count = mul_div(adjusted_feature_count, skipped + kept, kept);
+         }
+ 
+         if adjusted_feature_count > 0 && !tile_is_empty {
+@@ -2078,7 +2093,7 @@ pub fn make_tile(octx: &Ctx<'_>, ort: &ReadTile, mp: &MakeParams) -> MakeResult
+ 
+             let mut adjusted_tile_size = compressed.len();
+             if kept > 0 {
+-                adjusted_tile_size = adjusted_tile_size.wrapping_mul(kept + skipped) / kept;
++                adjusted_tile_size = mul_div(adjusted_tile_size, kept + skipped, kept);
+             }
+ 
+             if !fits_anyway
+-- 
+2.43.0
+

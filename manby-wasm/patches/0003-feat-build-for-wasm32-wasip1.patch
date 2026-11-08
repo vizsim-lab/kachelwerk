@@ -1,0 +1,1203 @@
+From 29a8d5a93f813f5c9a54656cabada85018639385 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sun, 8 Nov 2026 10:32:11 +0000
+Subject: [PATCH 3/3] feat: build for wasm32-wasip1
+
+manby and tippecanoe-rs now build for WASI, so that a web page can tile
+GeoParquet in the browser through a WASI shim, on one thread. The tiles
+are the same as the native build's.
+
+- tippecanoe-rs gets `os`: the Unix extension traits it and manby use,
+  and on WASI equivalents of read_at and write_at (by pread and pwrite)
+  and of the parts of MetadataExt that are used.
+- What WASI does not have is left out there: filters (fork, pipe, exec),
+  SIGPIPE, getrlimit, statfs, dup, file mappings, madvise and getrusage.
+  mkstemp is made in Rust, and calc_memsize says 2 GiB.
+- jemalloc only where it builds; WebAssembly uses the default allocator.
+- Threads cannot start on WASI, so a run's pools are the calling thread
+  (pool::Pool), rayon's global pool falls back to that thread, and the
+  tiling coordinator runs the queued tasks itself while it waits.
+- parquet reads a File through clones of its handle, which WASI cannot
+  make, so GeoParquet is read into memory there.
+- Large vectors stay on the heap on WASI, with no file to spill to.
+
+Nothing changes where the target is not WASI.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018JFwoob6fHaD4i2xGpSuk7
+---
+ Cargo.toml                                  |   9 +-
+ crates/tippecanoe-rs/src/cstd.rs            |   2 +-
+ crates/tippecanoe-rs/src/decode.rs          |   4 +-
+ crates/tippecanoe-rs/src/dirtiles.rs        |   2 +-
+ crates/tippecanoe-rs/src/enumerate.rs       |   2 +
+ crates/tippecanoe-rs/src/jsontool.rs        |   2 +
+ crates/tippecanoe-rs/src/lib.rs             |   1 +
+ crates/tippecanoe-rs/src/os.rs              | 149 ++++++++++++++++++++
+ crates/tippecanoe-rs/src/platform.rs        |  18 ++-
+ crates/tippecanoe-rs/src/plugin.rs          |  26 ++++
+ crates/tippecanoe-rs/src/tile.rs            |  19 ++-
+ crates/tippecanoe-rs/src/tile_join.rs       |   4 +-
+ crates/tippecanoe-rs/src/tippecanoe_main.rs | 129 +++++++++++++++--
+ src/buf.rs                                  |  28 +++-
+ src/ingest/arrow.rs                         |  10 ++
+ src/ingest/mod.rs                           |   6 +-
+ src/join/mod.rs                             |  14 +-
+ src/join/source.rs                          |   4 +-
+ src/lib.rs                                  |   1 +
+ src/main.rs                                 |   2 +
+ src/mem.rs                                  |  14 +-
+ src/options.rs                              |   8 +-
+ src/order.rs                                |   4 +-
+ src/pool.rs                                 |  63 +++++++++
+ src/serve/tileset.rs                        |   2 +-
+ src/sink/dir.rs                             |   2 +-
+ src/sink/pmtiles.rs                         |   2 +-
+ src/tiler/engine.rs                         |  17 +++
+ src/tiler/mod.rs                            |  12 +-
+ 29 files changed, 494 insertions(+), 62 deletions(-)
+ create mode 100644 crates/tippecanoe-rs/src/os.rs
+ create mode 100644 src/pool.rs
+
+diff --git a/Cargo.toml b/Cargo.toml
+index 018f6fb..844c11f 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -31,7 +31,6 @@ libc = "0.2.191"
+ libdeflater = "1.26.1"
+ memmap2 = "0.9.12"
+ mlt-core = { version = "0.22.0", optional = true }
+-tikv-jemallocator = "0.7"
+ rayon = "1.12.0"
+ rusqlite = { version = "0.41", features = ["bundled"] }
+ tippecanoe-rs = { version = "2.82.1", path = "crates/tippecanoe-rs" }
+@@ -53,6 +52,14 @@ bytes = { version = "1", optional = true }
+ webpki-root-certs = { version = "1", optional = true }
+ arrow-select = "60.1"
+ 
++# jemalloc does not build for WebAssembly; there the default allocator is used.
++[target.'cfg(not(target_family = "wasm"))'.dependencies]
++tikv-jemallocator = "0.7"
++
++# GeoParquet is read from memory on WASI, which cannot clone file handles.
++[target.'cfg(target_os = "wasi")'.dependencies]
++bytes = "1"
++
+ [dev-dependencies]
+ libz-sys = "1.1"
+ 
+diff --git a/crates/tippecanoe-rs/src/cstd.rs b/crates/tippecanoe-rs/src/cstd.rs
+index 7070463..14669be 100644
+--- a/crates/tippecanoe-rs/src/cstd.rs
++++ b/crates/tippecanoe-rs/src/cstd.rs
+@@ -101,7 +101,7 @@ fn errno_location() -> *mut libc::c_int {
+     unsafe { libc::__error() }
+ }
+ 
+-#[cfg(any(target_os = "linux", target_os = "android"))]
++#[cfg(any(target_os = "linux", target_os = "android", target_os = "wasi"))]
+ fn errno_location() -> *mut libc::c_int {
+     // SAFETY: __errno_location has no preconditions and returns this thread's errno.
+     unsafe { libc::__errno_location() }
+diff --git a/crates/tippecanoe-rs/src/decode.rs b/crates/tippecanoe-rs/src/decode.rs
+index d8503ea..d535380 100644
+--- a/crates/tippecanoe-rs/src/decode.rs
++++ b/crates/tippecanoe-rs/src/decode.rs
+@@ -4,7 +4,6 @@ use std::collections::BTreeSet;
+ use std::ffi::{CStr, c_char};
+ use std::fs::File;
+ use std::io::Read;
+-use std::os::unix::fs::MetadataExt;
+ use std::sync::RwLock;
+ use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
+ 
+@@ -20,6 +19,7 @@ use crate::errors::{
+ use crate::getopt::{Getopt, LongOption, NO_ARGUMENT, REQUIRED_ARGUMENT};
+ use crate::globals::PROGRESS_TIME_ENABLED;
+ use crate::mvt::{MVT_LINESTRING, MVT_POINT, MVT_POLYGON, MvtTile};
++use crate::os::MetadataExt;
+ use crate::pmtiles_file::{
+     pmtiles_entries_tms, pmtiles_get_tile, pmtiles_has_suffix, pmtilesmeta2tmp,
+ };
+@@ -860,6 +860,8 @@ fn c_streq(map: &[u8], s: &[u8]) -> bool {
+ /// writing to a closed pipe ends the program quietly instead of failing the write.
+ fn restore_sigpipe() {
+     // SAFETY: setting a signal to its default action has no preconditions.
++    // WASI has no signals.
++    #[cfg(not(target_os = "wasi"))]
+     unsafe {
+         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+     }
+diff --git a/crates/tippecanoe-rs/src/dirtiles.rs b/crates/tippecanoe-rs/src/dirtiles.rs
+index 31fca57..74f0c8c 100644
+--- a/crates/tippecanoe-rs/src/dirtiles.rs
++++ b/crates/tippecanoe-rs/src/dirtiles.rs
+@@ -4,7 +4,6 @@ use std::cmp::Ordering;
+ use std::fs::{self, File};
+ use std::io::{BufReader, BufWriter, Write};
+ use std::os::fd::IntoRawFd;
+-use std::os::unix::ffi::OsStrExt;
+ use std::process::exit;
+ 
+ use rusqlite::Connection;
+@@ -15,6 +14,7 @@ use crate::errors::{
+ };
+ use crate::jsonpull::{JsonPull, JsonType};
+ use crate::mbtiles::{Metadata, c_str_bytes, sqlite3_exec, sqlite3_mprintf, sqlite3_open};
++use crate::os::OsStrExt;
+ use crate::write_json::JsonWriter;
+ 
+ /// `zxy`. Ordered by zoom, then x, then y reversed (for TMS). The extension
+diff --git a/crates/tippecanoe-rs/src/enumerate.rs b/crates/tippecanoe-rs/src/enumerate.rs
+index 22d317a..f5a3bde 100644
+--- a/crates/tippecanoe-rs/src/enumerate.rs
++++ b/crates/tippecanoe-rs/src/enumerate.rs
+@@ -99,6 +99,8 @@ pub fn main() {
+ /// writing to a closed pipe ends the program quietly instead of failing the write.
+ fn restore_sigpipe() {
+     // SAFETY: setting a signal to its default action has no preconditions.
++    // WASI has no signals.
++    #[cfg(not(target_os = "wasi"))]
+     unsafe {
+         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+     }
+diff --git a/crates/tippecanoe-rs/src/jsontool.rs b/crates/tippecanoe-rs/src/jsontool.rs
+index 5a79e95..ca3d953 100644
+--- a/crates/tippecanoe-rs/src/jsontool.rs
++++ b/crates/tippecanoe-rs/src/jsontool.rs
+@@ -705,6 +705,8 @@ pub fn main() {
+ /// writing to a closed pipe ends the program quietly instead of failing the write.
+ fn restore_sigpipe() {
+     // SAFETY: setting a signal to its default action has no preconditions.
++    // WASI has no signals.
++    #[cfg(not(target_os = "wasi"))]
+     unsafe {
+         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+     }
+diff --git a/crates/tippecanoe-rs/src/lib.rs b/crates/tippecanoe-rs/src/lib.rs
+index 8732303..017dcf0 100644
+--- a/crates/tippecanoe-rs/src/lib.rs
++++ b/crates/tippecanoe-rs/src/lib.rs
+@@ -12,6 +12,7 @@ pub mod cstd;
+ pub mod errors;
+ pub mod globals;
+ pub mod options;
++pub mod os;
+ pub mod version;
+ 
+ // One module per C++ source file
+diff --git a/crates/tippecanoe-rs/src/os.rs b/crates/tippecanoe-rs/src/os.rs
+new file mode 100644
+index 0000000..62613f1
+--- /dev/null
++++ b/crates/tippecanoe-rs/src/os.rs
+@@ -0,0 +1,149 @@
++//! The Unix extension traits tippecanoe-rs and manby use, and their
++//! equivalents on WASI (`wasm32-wasip1`), which reads and writes at offsets
++//! but has no Unix file modes. Everywhere else these are std's own traits.
++
++#[cfg(unix)]
++pub use std::os::unix::ffi::OsStrExt;
++#[cfg(unix)]
++pub use std::os::unix::fs::{FileExt, MetadataExt};
++
++#[cfg(target_os = "wasi")]
++pub use std::os::wasi::ffi::OsStrExt;
++#[cfg(target_os = "wasi")]
++pub use wasi::{FileExt, MetadataExt};
++
++#[cfg(target_os = "wasi")]
++mod wasi {
++    use std::fs::{File, Metadata};
++    use std::io;
++    use std::os::fd::AsRawFd;
++
++    /// `std::os::unix::fs::FileExt`, by way of WASI's `pread` and `pwrite`.
++    pub trait FileExt {
++        fn read_at(&self, buf: &mut [u8], offset: u64) -> io::Result<usize>;
++        fn write_at(&self, buf: &[u8], offset: u64) -> io::Result<usize>;
++
++        fn read_exact_at(&self, mut buf: &mut [u8], mut offset: u64) -> io::Result<()> {
++            while !buf.is_empty() {
++                match self.read_at(buf, offset) {
++                    Ok(0) => {
++                        return Err(io::Error::new(
++                            io::ErrorKind::UnexpectedEof,
++                            "failed to fill whole buffer",
++                        ));
++                    }
++                    Ok(n) => {
++                        buf = &mut buf[n..];
++                        offset += n as u64;
++                    }
++                    Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
++                    Err(e) => return Err(e),
++                }
++            }
++            Ok(())
++        }
++
++        fn write_all_at(&self, mut buf: &[u8], mut offset: u64) -> io::Result<()> {
++            while !buf.is_empty() {
++                match self.write_at(buf, offset) {
++                    Ok(0) => {
++                        return Err(io::Error::new(
++                            io::ErrorKind::WriteZero,
++                            "failed to write whole buffer",
++                        ));
++                    }
++                    Ok(n) => {
++                        buf = &buf[n..];
++                        offset += n as u64;
++                    }
++                    Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
++                    Err(e) => return Err(e),
++                }
++            }
++            Ok(())
++        }
++    }
++
++    impl FileExt for File {
++        fn read_at(&self, buf: &mut [u8], offset: u64) -> io::Result<usize> {
++            // SAFETY: buf is valid for writes of buf.len() bytes.
++            let n = unsafe {
++                libc::pread(
++                    self.as_raw_fd(),
++                    buf.as_mut_ptr().cast(),
++                    buf.len(),
++                    offset as libc::off_t,
++                )
++            };
++            if n < 0 {
++                Err(io::Error::last_os_error())
++            } else {
++                Ok(n as usize)
++            }
++        }
++
++        fn write_at(&self, buf: &[u8], offset: u64) -> io::Result<usize> {
++            // SAFETY: buf is valid for reads of buf.len() bytes.
++            let n = unsafe {
++                libc::pwrite(
++                    self.as_raw_fd(),
++                    buf.as_ptr().cast(),
++                    buf.len(),
++                    offset as libc::off_t,
++                )
++            };
++            if n < 0 {
++                Err(io::Error::last_os_error())
++            } else {
++                Ok(n as usize)
++            }
++        }
++    }
++
++    /// The parts of `std::os::unix::fs::MetadataExt` that are used. WASI has
++    /// no permission bits, so `mode` is only the file type.
++    pub trait MetadataExt {
++        fn size(&self) -> u64;
++        fn mode(&self) -> u32;
++        fn mtime(&self) -> i64;
++        fn mtime_nsec(&self) -> i64;
++        fn ino(&self) -> u64;
++    }
++
++    impl MetadataExt for Metadata {
++        fn size(&self) -> u64 {
++            self.len()
++        }
++
++        fn mode(&self) -> u32 {
++            let t = self.file_type();
++            (if t.is_dir() {
++                libc::S_IFDIR
++            } else if t.is_symlink() {
++                libc::S_IFLNK
++            } else if t.is_file() {
++                libc::S_IFREG
++            } else {
++                0
++            }) as u32
++        }
++
++        fn mtime(&self) -> i64 {
++            since_epoch(self).map_or(0, |d| d.as_secs() as i64)
++        }
++
++        fn mtime_nsec(&self) -> i64 {
++            since_epoch(self).map_or(0, |d| d.subsec_nanos() as i64)
++        }
++
++        fn ino(&self) -> u64 {
++            0
++        }
++    }
++
++    fn since_epoch(m: &Metadata) -> Option<std::time::Duration> {
++        m.modified()
++            .ok()
++            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
++    }
++}
+diff --git a/crates/tippecanoe-rs/src/platform.rs b/crates/tippecanoe-rs/src/platform.rs
+index 6c162f0..693906a 100644
+--- a/crates/tippecanoe-rs/src/platform.rs
++++ b/crates/tippecanoe-rs/src/platform.rs
+@@ -1,6 +1,8 @@
+ //! Port of platform.cpp.
+ 
++#[cfg(not(target_os = "wasi"))]
+ use crate::cstd::perror;
++#[cfg(not(target_os = "wasi"))]
+ use crate::errors::{EXIT_MEMORY, EXIT_PTHREAD};
+ 
+ pub fn get_num_avail_cpus() -> i64 {
+@@ -35,7 +37,14 @@ pub fn calc_memsize() -> usize {
+     hw_memsize as usize
+ }
+ 
+-#[cfg(not(target_os = "macos"))]
++/// WASI does not say how much memory there is. A 32-bit WebAssembly memory
++/// can grow to 4 GiB, and browsers often stop it at 2 GiB, so this says 2.
++#[cfg(target_os = "wasi")]
++pub fn calc_memsize() -> usize {
++    1 << 31
++}
++
++#[cfg(not(any(target_os = "macos", target_os = "wasi")))]
+ pub fn calc_memsize() -> usize {
+     // SAFETY: sysconf has no preconditions.
+     let pagesize = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as i64;
+@@ -48,6 +57,13 @@ pub fn calc_memsize() -> usize {
+     (pages * pagesize) as usize
+ }
+ 
++/// WASI has no resource limits; this is the soft limit most systems start with.
++#[cfg(target_os = "wasi")]
++pub fn get_max_open_files() -> usize {
++    1024
++}
++
++#[cfg(not(target_os = "wasi"))]
+ pub fn get_max_open_files() -> usize {
+     let mut rl = libc::rlimit {
+         rlim_cur: 0,
+diff --git a/crates/tippecanoe-rs/src/plugin.rs b/crates/tippecanoe-rs/src/plugin.rs
+index 564b006..fb925c4 100644
+--- a/crates/tippecanoe-rs/src/plugin.rs
++++ b/crates/tippecanoe-rs/src/plugin.rs
+@@ -4,6 +4,10 @@
+ //! The C++ functions take the whole `layermaps` and `layer_unmaps` vectors and
+ //! a `tiling_seg` index, and only ever touch the entries at `tiling_seg`. Here
+ //! they take those two entries, which belong to the calling tiling thread.
++//!
++//! WASI has no processes, so there only the parts that read and write the
++//! GeoJSON are used.
++#![cfg_attr(target_os = "wasi", allow(dead_code, unused_imports))]
+ 
+ use std::collections::{BTreeMap, BTreeSet};
+ use std::ffi::CString;
+@@ -545,6 +549,23 @@ fn cstring(s: &str) -> CString {
+     }
+ }
+ 
++/// WASI has no processes, so a prefilter or postfilter cannot run there.
++#[cfg(target_os = "wasi")]
++#[allow(clippy::too_many_arguments)]
++pub fn setup_filter(
++    filter: &str,
++    _write_to: &mut i32,
++    _read_from: &mut i32,
++    _pid: &mut libc::pid_t,
++    _z: u32,
++    _x: u32,
++    _y: u32,
++) {
++    eprintln!("Can't run the filter {}: WASI has no processes", filter);
++    std::process::exit(EXIT_PTHREAD);
++}
++
++#[cfg(not(target_os = "wasi"))]
+ #[allow(clippy::too_many_arguments)]
+ pub fn setup_filter(
+     filter: &str,
+@@ -669,7 +690,12 @@ pub fn setup_filter(
+     }
+ }
+ 
++/// No filter process can have started on WASI.
++#[cfg(target_os = "wasi")]
++pub fn wait_for_filter(_pid: libc::pid_t, _what: &str) {}
++
+ /// `waitpid` until the filter process has exited or been killed.
++#[cfg(not(target_os = "wasi"))]
+ pub fn wait_for_filter(pid: libc::pid_t, what: &str) {
+     loop {
+         let mut stat_loc: i32 = 0;
+diff --git a/crates/tippecanoe-rs/src/tile.rs b/crates/tippecanoe-rs/src/tile.rs
+index ac5db04..8bf8a56 100644
+--- a/crates/tippecanoe-rs/src/tile.rs
++++ b/crates/tippecanoe-rs/src/tile.rs
+@@ -9,7 +9,6 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
+ use std::fs::{File, OpenOptions};
+ use std::io::Write;
+ use std::os::fd::{FromRawFd, IntoRawFd};
+-use std::os::unix::fs::FileExt;
+ use std::sync::Mutex;
+ use std::sync::atomic::{AtomicBool, AtomicI32, AtomicI64, AtomicU32, AtomicUsize, Ordering};
+ 
+@@ -47,6 +46,7 @@ use crate::mvt::{
+     stringified_to_mvt_value,
+ };
+ use crate::options::*;
++use crate::os::FileExt;
+ use crate::plugin::{
+     PipeWriter, filter_layers, is_epipe, parse_feature, perror_io, setup_filter, wait_for_filter,
+ };
+@@ -62,6 +62,20 @@ use crate::thread::thread_create;
+ use crate::tippecanoe_main::{mkstemp_cloexec, progress_time};
+ use crate::write_json::{JsonWriter, layer_to_geojson};
+ 
++/// libc `dup`. WASI cannot duplicate descriptors, so there it fails, with
++/// errno ENOTSUP.
++fn dup_fd(fd: i32) -> i32 {
++    #[cfg(not(target_os = "wasi"))]
++    // SAFETY: dup has no preconditions; the caller owns fd.
++    return unsafe { libc::dup(fd) };
++    #[cfg(target_os = "wasi")]
++    {
++        let _ = fd;
++        crate::cstd::set_errno(libc::ENOTSUP);
++        -1
++    }
++}
++
+ #[derive(Debug, Default)]
+ pub struct AtomicStrategy {
+     pub dropped_by_rate: AtomicUsize,
+@@ -4155,8 +4169,7 @@ fn run_thread(arg: &mut WriteTileArgs<'_>) -> Option<i32> {
+             // Since the fclose() has closed the underlying file descriptor
+             arg.geomfd[j].store(-1, Ordering::Relaxed);
+         } else {
+-            // SAFETY: duplicating and seeking a descriptor this thread owns.
+-            let newfd = unsafe { libc::dup(arg.geomfd[j].load(Ordering::Relaxed)) };
++            let newfd = dup_fd(arg.geomfd[j].load(Ordering::Relaxed));
+             if newfd < 0 {
+                 perror("dup geometry");
+                 std::process::exit(EXIT_OPEN);
+diff --git a/crates/tippecanoe-rs/src/tile_join.rs b/crates/tippecanoe-rs/src/tile_join.rs
+index da556f7..17a1673 100644
+--- a/crates/tippecanoe-rs/src/tile_join.rs
++++ b/crates/tippecanoe-rs/src/tile_join.rs
+@@ -4,7 +4,6 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+ use std::ffi::{CStr, c_char};
+ use std::fs::File;
+ use std::io::Read;
+-use std::os::unix::fs::MetadataExt;
+ use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
+ use std::sync::{Mutex, RwLock};
+ 
+@@ -38,6 +37,7 @@ use crate::mvt::{
+     MVT_STRING, MvtFeature, MvtLayer, MvtTile, MvtValue, compress, mvt_value_to_serial_val,
+     stringified_to_mvt_value,
+ };
++use crate::os::MetadataExt;
+ use crate::platform::get_num_avail_cpus;
+ use crate::pmtiles::EntryZxy;
+ use crate::pmtiles_file::{
+@@ -2048,6 +2048,8 @@ pub fn main() {
+ /// writing to a closed pipe ends the program quietly instead of failing the write.
+ fn restore_sigpipe() {
+     // SAFETY: setting a signal to its default action has no preconditions.
++    // WASI has no signals.
++    #[cfg(not(target_os = "wasi"))]
+     unsafe {
+         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+     }
+diff --git a/crates/tippecanoe-rs/src/tippecanoe_main.rs b/crates/tippecanoe-rs/src/tippecanoe_main.rs
+index f3d2196..c944c52 100644
+--- a/crates/tippecanoe-rs/src/tippecanoe_main.rs
++++ b/crates/tippecanoe-rs/src/tippecanoe_main.rs
+@@ -29,13 +29,23 @@ use std::fs::File;
+ use std::io::{BufRead, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
+ use std::mem::ManuallyDrop;
+ use std::os::fd::FromRawFd;
+-use std::os::unix::fs::FileExt;
+ use std::sync::atomic::{AtomicBool, AtomicI32, AtomicI64, AtomicU32, AtomicU64, Ordering};
+ use std::sync::{Arc, Mutex, OnceLock, RwLock};
+ 
+-use memmap2::{Advice, Mmap, MmapMut, MmapOptions};
++#[cfg(unix)]
++use memmap2::Advice;
++use memmap2::{Mmap, MmapMut, MmapOptions};
+ use rusqlite::Connection;
+ 
++/// memmap2 has no `Advice` where it cannot map files, as on WASI.
++#[cfg(not(unix))]
++#[derive(Clone, Copy)]
++enum Advice {
++    Random,
++    Sequential,
++    WillNeed,
++}
++
+ use crate::attribute::{AttributeOp, set_attribute_accum_arg};
+ use crate::cstd::{atoi, errno, perror, perror_io, set_errno, strerror, strtod, strtoll};
+ use crate::dirtiles::{check_dir, dir_write_metadata};
+@@ -56,6 +66,7 @@ use crate::mbtiles::{
+ use crate::memfile::{memfile_close, memfile_open, memfile_write};
+ use crate::mvt::{MVT_BOOL, MVT_DOUBLE, MVT_FLOAT, MVT_INT, MVT_STRING};
+ use crate::options::*;
++use crate::os::FileExt;
+ use crate::platform::{
+     calc_memsize, get_max_open_files, get_null_device, get_num_avail_cpus, get_page_size,
+ };
+@@ -287,12 +298,58 @@ fn mmap_fd(fd: i32, len: usize) -> std::io::Result<Mmap> {
+         return Err(std::io::Error::from_raw_os_error(libc::EINVAL));
+     }
+     // SAFETY: the temporary files mapped here are not changed while mapped.
+-    unsafe { MmapOptions::new().len(len).map_copy_read_only(fd) }
++    unsafe { map_copy_read_only_fd(MmapOptions::new().len(len), fd) }
++}
++
++/// `options.map_copy_read_only(fd)`. WASI cannot map files, so there it
++/// fails, as mmap can anywhere, and the callers read the file instead.
++///
++/// # Safety
++///
++/// As for `MmapOptions::map_copy_read_only`: the file is not changed while
++/// it is mapped.
++unsafe fn map_copy_read_only_fd(options: &MmapOptions, fd: i32) -> std::io::Result<Mmap> {
++    #[cfg(unix)]
++    // SAFETY: the caller's.
++    return unsafe { options.map_copy_read_only(fd) };
++    #[cfg(not(unix))]
++    {
++        let _ = (options, fd);
++        Err(std::io::ErrorKind::Unsupported.into())
++    }
++}
++
++/// `options.map_mut(fd)`, which fails on WASI as above.
++///
++/// # Safety
++///
++/// As for `MmapOptions::map_mut`: the file is changed only through the map
++/// while it is mapped.
++unsafe fn map_mut_fd(options: &MmapOptions, fd: i32) -> std::io::Result<MmapMut> {
++    #[cfg(unix)]
++    // SAFETY: the caller's.
++    return unsafe { options.map_mut(fd) };
++    #[cfg(not(unix))]
++    {
++        let _ = (options, fd);
++        Err(std::io::ErrorKind::Unsupported.into())
++    }
+ }
+ 
+ /// `madvise`, whose result the C++ ignores.
+ fn madvise(map: &Mmap, advice: Advice) {
++    #[cfg(unix)]
++    let _ = map.advise(advice);
++    #[cfg(not(unix))]
++    let _ = (map, advice);
++}
++
++/// `madvise` of a writable map, whose result the C++ ignores too.
++fn madvise_mut(map: &MmapMut, advice: Advice) {
++    #[cfg(unix)]
+     let _ = map.advise(advice);
++    #[cfg(not(unix))]
++    let _ = (map, advice);
+ }
+ 
+ /// `fwrite(buf, size, count, fp) != count`, for the writes that the C++ checks
+@@ -921,7 +978,7 @@ impl Stream {
+     fn peekc(&mut self) -> i32 {
+         match self.fp.fill_buf() {
+             Ok(b) if !b.is_empty() => b[0] as i32,
+-            _ => libc::EOF,
++            _ => -1, // EOF, which the libc crate does not define for WASI
+         }
+     }
+ 
+@@ -1944,6 +2001,10 @@ fn read_input(
+         readers.push(r);
+     }
+ 
++    // WASI cannot tell how much space a file system has left.
++    #[cfg(target_os = "wasi")]
++    DISKFREE.store(i64::MAX, Ordering::Relaxed);
++    #[cfg(not(target_os = "wasi"))]
+     {
+         // SAFETY: fsstat is a valid statfs buffer to fill in.
+         let mut fsstat: libc::statfs = unsafe { std::mem::zeroed() };
+@@ -2270,10 +2331,10 @@ fn read_input(
+                     if map_len > 0 && off % get_page_size() == 0 {
+                         // SAFETY: the input file is not changed while mapped.
+                         if let Ok(m) = unsafe {
+-                            MmapOptions::new()
+-                                .offset(off as u64)
+-                                .len(map_len as usize)
+-                                .map_copy_read_only(fd)
++                            map_copy_read_only_fd(
++                                MmapOptions::new().offset(off as u64).len(map_len as usize),
++                                fd,
++                            )
+                         } {
+                             madvise(&m, Advice::Random); // sequential, but from several pointers at once
+                             map = Some(m);
+@@ -3466,7 +3527,7 @@ fn read_input(
+         // SAFETY: the sorted geometry file is changed only through this map
+         // while it is mapped.
+         let mut geom: MmapMut =
+-            match unsafe { MmapOptions::new().len(geomst_size as usize).map_mut(geomfd) } {
++            match unsafe { map_mut_fd(MmapOptions::new().len(geomst_size as usize), geomfd) } {
+                 Ok(m) if geomst_size > 0 => m,
+                 Ok(_) => {
+                     set_errno(libc::EINVAL);
+@@ -3478,8 +3539,8 @@ fn read_input(
+                     std::process::exit(EXIT_MEMORY);
+                 }
+             };
+-        let _ = geom.advise(Advice::Sequential);
+-        let _ = geom.advise(Advice::WillNeed);
++        madvise_mut(&geom, Advice::Sequential);
++        madvise_mut(&geom, Advice::WillNeed);
+ 
+         let mut ds: Vec<DropState> = vec![DropState::default(); (maxzoom + 1) as usize];
+         prep_drop_states(&mut ds, maxzoom, basezoom, droprate);
+@@ -4906,6 +4967,8 @@ pub fn main() {
+     }
+ 
+     // SAFETY: ignoring SIGPIPE has no preconditions.
++    // WASI has no signals.
++    #[cfg(not(target_os = "wasi"))]
+     unsafe {
+         libc::signal(libc::SIGPIPE, libc::SIG_IGN);
+     }
+@@ -5160,8 +5223,52 @@ pub fn main() {
+     std::process::exit(ret);
+ }
+ 
++/// libc `mkstemp`, which wasi-libc does not have: tries random names in
++/// place of the XXXXXX until one can be created. Returns the file descriptor,
++/// or -1 with errno set.
++#[cfg(target_os = "wasi")]
++pub fn mkstemp(name: &mut String) -> i32 {
++    use std::hash::{BuildHasher, Hasher};
++    use std::os::fd::IntoRawFd;
++
++    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
++    let Some(stem) = name.strip_suffix("XXXXXX").map(str::to_string) else {
++        set_errno(libc::EINVAL);
++        return -1;
++    };
++    for attempt in 0..100u64 {
++        let mut h = std::collections::hash_map::RandomState::new().build_hasher();
++        h.write_u64(attempt);
++        let mut r = h.finish();
++        let mut candidate = stem.clone();
++        for _ in 0..6 {
++            candidate.push(CHARS[(r % CHARS.len() as u64) as usize] as char);
++            r /= CHARS.len() as u64;
++        }
++        match std::fs::OpenOptions::new()
++            .read(true)
++            .write(true)
++            .create_new(true)
++            .open(&candidate)
++        {
++            Ok(f) => {
++                *name = candidate;
++                return f.into_raw_fd();
++            }
++            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
++            Err(e) => {
++                set_errno(e.raw_os_error().unwrap_or(libc::EIO));
++                return -1;
++            }
++        }
++    }
++    set_errno(libc::EEXIST);
++    -1
++}
++
+ /// libc `mkstemp`. `name` is a template ending in XXXXXX, which is replaced
+ /// with the name of the file created. Returns the file descriptor, or -1.
++#[cfg(not(target_os = "wasi"))]
+ pub fn mkstemp(name: &mut String) -> i32 {
+     let mut buf = name.clone().into_bytes();
+     buf.push(0);
+diff --git a/src/buf.rs b/src/buf.rs
+index 2890123..df9cc71 100644
+--- a/src/buf.rs
++++ b/src/buf.rs
+@@ -7,12 +7,17 @@
+ //! resident memory nears the budget, a pager thread maps file regions
+ //! afresh: that takes their pages out of the process's memory, while the
+ //! page cache keeps them for the next use as long as the machine has room.
++//!
++//! WASI cannot map files, so there every vector takes heap memory and the
++//! file storage goes unused.
++#![cfg_attr(not(unix), allow(dead_code))]
+ 
+ use std::alloc::Layout;
+ use std::collections::BTreeMap;
+ use std::fs::File;
+ use std::marker::PhantomData;
+ use std::mem::{ManuallyDrop, MaybeUninit, needs_drop, size_of};
++#[cfg(unix)]
+ use std::os::fd::AsRawFd;
+ use std::path::{Path, PathBuf};
+ use std::ptr::NonNull;
+@@ -89,9 +94,19 @@ pub fn spilling() -> bool {
+ 
+ fn place_in_file(bytes: usize) -> bool {
+     let budget = PAGER.budget.load(Relaxed);
+-    bytes >= FILE_MIN && budget != u64::MAX && PAGER.heap.load(Relaxed) + bytes as u64 > budget / 8
++    // WASI cannot map files, so there everything stays on the heap.
++    cfg!(unix)
++        && bytes >= FILE_MIN
++        && budget != u64::MAX
++        && PAGER.heap.load(Relaxed) + bytes as u64 > budget / 8
++}
++
++#[cfg(not(unix))]
++fn file_alloc(_bytes: usize) -> Option<NonNull<u8>> {
++    None
+ }
+ 
++#[cfg(unix)]
+ fn file_alloc(bytes: usize) -> Option<NonNull<u8>> {
+     let len = bytes.next_multiple_of(GRANULE);
+     let mut s = PAGER.state.lock().unwrap();
+@@ -140,6 +155,10 @@ fn file_alloc(bytes: usize) -> Option<NonNull<u8>> {
+     NonNull::new(p as *mut u8)
+ }
+ 
++#[cfg(not(unix))]
++fn file_free(_p: *mut u8) {}
++
++#[cfg(unix)]
+ fn file_free(p: *mut u8) {
+     let mut s = PAGER.state.lock().unwrap();
+     let Some((off, len)) = s.regions.remove(&(p as usize)) else {
+@@ -154,6 +173,7 @@ fn file_free(p: *mut u8) {
+ }
+ 
+ /// Gives the disk space of a range of the file back.
++#[cfg(unix)]
+ fn punch_hole(f: &File, off: u64, len: usize) {
+     #[cfg(target_os = "macos")]
+     {
+@@ -182,6 +202,7 @@ fn punch_hole(f: &File, off: u64, len: usize) {
+     let _ = (f, off, len);
+ }
+ 
++#[cfg(unix)]
+ fn pager() {
+     loop {
+         std::thread::sleep(PAGER_INTERVAL);
+@@ -221,8 +242,13 @@ pub fn trim() {
+     trim_locked(&mut PAGER.state.lock().unwrap(), 0);
+ }
+ 
++/// Nothing is mapped where files cannot be mapped.
++#[cfg(not(unix))]
++fn trim_locked(_s: &mut PagerState, _target: u64) {}
++
+ /// Maps file regions afresh, going round them from where the last trim
+ /// stopped, until resident memory is down to `target`.
++#[cfg(unix)]
+ fn trim_locked(s: &mut PagerState, target: u64) {
+     let Some(f) = &s.file else { return };
+     let from = s.cursor;
+diff --git a/src/ingest/arrow.rs b/src/ingest/arrow.rs
+index 489e35a..7a70d4d 100644
+--- a/src/ingest/arrow.rs
++++ b/src/ingest/arrow.rs
+@@ -102,6 +102,16 @@ pub fn open_parquet(
+     cfg: &Config<'_>,
+     bbox: Option<&WorldBox>,
+ ) -> crate::Result<(SchemaRef, Batches, Kept)> {
++    // parquet reads a File through clones of its handle, which WASI cannot
++    // make, so there the file is read into memory first.
++    #[cfg(target_os = "wasi")]
++    let file = {
++        let mut file = file;
++        let mut data = Vec::new();
++        file.read_to_end(&mut data)
++            .map_err(|e| read_error(fname, e))?;
++        bytes::Bytes::from(data)
++    };
+     let builder =
+         ParquetRecordBatchReaderBuilder::try_new(file).map_err(|e| read_error(fname, e))?;
+     let full = Table::new(builder.schema(), fname, cfg)?;
+diff --git a/src/ingest/mod.rs b/src/ingest/mod.rs
+index 29b9d44..a13d8a0 100644
+--- a/src/ingest/mod.rs
++++ b/src/ingest/mod.rs
+@@ -441,10 +441,8 @@ fn open_source(src: &Source) -> Result<(Option<std::fs::File>, Option<memmap2::M
+ /// Reads every input named in `options` into one store, in input order.
+ pub fn read_inputs(options: &Options) -> crate::Result<FeatureStore> {
+     let threads = options.thread_count();
+-    let pool = rayon::ThreadPoolBuilder::new()
+-        .num_threads(threads)
+-        .build()
+-        .map_err(|e| Error::new(EXIT_PTHREAD, e.to_string()))?;
++    let pool =
++        crate::pool::Pool::new(threads).map_err(|e| Error::new(EXIT_PTHREAD, e.to_string()))?;
+     pool.install(|| read_inputs1(options, threads))
+ }
+ 
+diff --git a/src/join/mod.rs b/src/join/mod.rs
+index b3344d1..7793527 100644
+--- a/src/join/mod.rs
++++ b/src/join/mod.rs
+@@ -177,17 +177,9 @@ struct Stats {
+ 
+ /// Joins the tilesets as `o` says.
+ pub fn join(o: &JoinOptions) -> Result<JoinSummary> {
+-    let threads = if o.threads > 0 {
+-        o.threads
+-    } else {
+-        std::thread::available_parallelism()
+-            .map(|n| n.get())
+-            .unwrap_or(1)
+-    };
+-    let pool = rayon::ThreadPoolBuilder::new()
+-        .num_threads(threads)
+-        .build()
+-        .map_err(|e| Error::new(EXIT_PTHREAD, e.to_string()))?;
++    let threads = crate::pool::thread_count(o.threads);
++    let pool =
++        crate::pool::Pool::new(threads).map_err(|e| Error::new(EXIT_PTHREAD, e.to_string()))?;
+     pool.install(|| join_in_pool(o, threads))
+ }
+ 
+diff --git a/src/join/source.rs b/src/join/source.rs
+index 3dec967..e6f8999 100644
+--- a/src/join/source.rs
++++ b/src/join/source.rs
+@@ -14,7 +14,6 @@
+ 
+ use std::ffi::{CStr, c_char};
+ use std::fs::File;
+-use std::os::unix::fs::{FileExt, MetadataExt};
+ use std::sync::mpsc::{Receiver, sync_channel};
+ use std::sync::{Arc, Mutex};
+ 
+@@ -22,6 +21,7 @@ use memmap2::Mmap;
+ use rusqlite::{Connection, OpenFlags, ffi};
+ use tippecanoe::errors::{EXIT_FAILURE, EXIT_JSON, EXIT_MEMORY, EXIT_OPEN, EXIT_SQLITE};
+ use tippecanoe::jsonpull::{JsonPull, JsonType};
++use tippecanoe::os::{FileExt, MetadataExt};
+ use tippecanoe::pmtiles::{self, EntryV3, HeaderV3};
+ 
+ use crate::{Error, Result};
+@@ -926,7 +926,7 @@ fn atoi_name(s: &[u8]) -> i32 {
+ /// `enumerate_dirtiles`, returning errors instead of exiting: the tiles of
+ /// the zooms `minzoom` to `maxzoom`, sorted by zoom, x and y reversed.
+ fn enumerate_dirtiles(fname: &str, minzoom: i32, maxzoom: i32) -> Result<Vec<TileRef>> {
+-    use std::os::unix::ffi::OsStrExt;
++    use tippecanoe::os::OsStrExt;
+     let open_error = |path: &str, e: std::io::Error| {
+         Error::new(
+             EXIT_OPEN,
+diff --git a/src/lib.rs b/src/lib.rs
+index a0a8437..e67d91c 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -17,6 +17,7 @@ pub mod mem;
+ pub mod mlt;
+ pub mod options;
+ pub mod order;
++pub mod pool;
+ pub mod serve;
+ pub mod sink;
+ pub mod stats;
+diff --git a/src/main.rs b/src/main.rs
+index ce44e88..6800b72 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -9,6 +9,7 @@
+ 
+ use std::ffi::OsString;
+ 
++#[cfg(not(target_family = "wasm"))]
+ #[global_allocator]
+ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+ 
+@@ -19,6 +20,7 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+ pub struct MallocConf(*const u8);
+ // SAFETY: the pointer is to a static string that is never written.
+ unsafe impl Sync for MallocConf {}
++#[cfg(not(target_family = "wasm"))]
+ #[unsafe(export_name = "_rjem_malloc_conf")]
+ pub static MALLOC_CONF: MallocConf =
+     MallocConf(c"narenas:4,dirty_decay_ms:0,muzzy_decay_ms:0,retain:true".as_ptr() as *const u8);
+diff --git a/src/mem.rs b/src/mem.rs
+index 07a2c78..ad10f34 100644
+--- a/src/mem.rs
++++ b/src/mem.rs
+@@ -35,8 +35,13 @@ pub fn resident() -> Option<u64> {
+     }
+ }
+ 
++/// WASI maps no files, so there is nothing to let go.
++#[cfg(not(unix))]
++pub fn release_mapped(_part: &[u8]) {}
++
+ /// Lets the pages of part of a file mapping go: they are read from the file
+ /// again if they are needed, but no longer count as the process's memory.
++#[cfg(unix)]
+ pub fn release_mapped(part: &[u8]) {
+     // SAFETY: sysconf has no preconditions.
+     let page = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
+@@ -56,7 +61,14 @@ pub fn release_mapped(part: &[u8]) {
+     }
+ }
+ 
++/// WASI does not say how much memory the process has used.
++#[cfg(not(unix))]
++pub fn peak_resident() -> Option<u64> {
++    None
++}
++
+ /// The peak resident set size of the process in bytes.
++#[cfg(unix)]
+ pub fn peak_resident() -> Option<u64> {
+     // SAFETY: rusage is plain data that getrusage fills in.
+     let mut ru: libc::rusage = unsafe { std::mem::zeroed() };
+@@ -75,12 +87,12 @@ pub fn peak_resident() -> Option<u64> {
+ 
+ use std::collections::BTreeMap;
+ use std::fs::{File, OpenOptions};
+-use std::os::unix::fs::FileExt;
+ use std::path::{Path, PathBuf};
+ use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+ use std::sync::{Arc, Mutex, OnceLock, RwLock};
+ 
+ use tippecanoe::errors::{EXIT_OPEN, EXIT_READ, EXIT_WRITE};
++use tippecanoe::os::FileExt;
+ 
+ use crate::Error;
+ use crate::buf::Buf;
+diff --git a/src/options.rs b/src/options.rs
+index 9297f3e..d8fb243 100644
+--- a/src/options.rs
++++ b/src/options.rs
+@@ -410,13 +410,7 @@ impl Options {
+ 
+     /// The number of worker threads to use.
+     pub fn thread_count(&self) -> usize {
+-        if self.threads > 0 {
+-            self.threads
+-        } else {
+-            std::thread::available_parallelism()
+-                .map(|n| n.get())
+-                .unwrap_or(1)
+-        }
++        crate::pool::thread_count(self.threads)
+     }
+ 
+     /// The checks and adjustments tippecanoe's main.cpp makes once the options
+diff --git a/src/order.rs b/src/order.rs
+index 7fd8316..79803a5 100644
+--- a/src/order.rs
++++ b/src/order.rs
+@@ -217,9 +217,7 @@ impl Out {
+ /// Sorts `store.features` and fills in `feature_minzoom`. Returns the zoom plan.
+ pub fn order(store: &mut FeatureStore, options: &Options) -> crate::Result<Plan> {
+     let threads = options.thread_count();
+-    let pool = rayon::ThreadPoolBuilder::new()
+-        .num_threads(threads)
+-        .build()
++    let pool = crate::pool::Pool::new(threads)
+         .map_err(|e| Error::new(tippecanoe::errors::EXIT_PTHREAD, e.to_string()))?;
+     let mut out = Out {
+         quiet: options.quiet,
+diff --git a/src/pool.rs b/src/pool.rs
+new file mode 100644
+index 0000000..ed9f176
+--- /dev/null
++++ b/src/pool.rs
+@@ -0,0 +1,63 @@
++//! The thread pools a run works in.
++
++/// How many threads to work with: `requested`, or for 0 as many as the
++/// machine runs at once. One where threads cannot be started (WASI).
++pub fn thread_count(requested: usize) -> usize {
++    if cfg!(target_os = "wasi") {
++        1
++    } else if requested > 0 {
++        requested
++    } else {
++        std::thread::available_parallelism()
++            .map(|n| n.get())
++            .unwrap_or(1)
++    }
++}
++
++/// A rayon thread pool, or, where threads cannot be started (WASI), none:
++/// the work then runs on the calling thread, and rayon's global pool, which
++/// `par_iter` and the scopes fall back to, is that thread alone.
++pub enum Pool {
++    Rayon(rayon::ThreadPool),
++    Inline,
++}
++
++impl Pool {
++    /// A pool of `threads` threads.
++    pub fn new(threads: usize) -> Result<Pool, rayon::ThreadPoolBuildError> {
++        if cfg!(target_os = "wasi") {
++            // Making the global pool here, where it cannot start threads,
++            // makes it this thread alone, so this thread runs the jobs that
++            // are queued while it waits, or when it yields to rayon.
++            let _ = rayon::current_num_threads();
++            return Ok(Pool::Inline);
++        }
++        rayon::ThreadPoolBuilder::new()
++            .num_threads(threads)
++            .build()
++            .map(Pool::Rayon)
++    }
++
++    /// `rayon::ThreadPool::install`.
++    pub fn install<OP, R>(&self, op: OP) -> R
++    where
++        OP: FnOnce() -> R + Send,
++        R: Send,
++    {
++        match self {
++            Pool::Rayon(pool) => pool.install(op),
++            Pool::Inline => op(),
++        }
++    }
++
++    /// `rayon::ThreadPool::in_place_scope`.
++    pub fn in_place_scope<'scope, OP, R>(&self, op: OP) -> R
++    where
++        OP: FnOnce(&rayon::Scope<'scope>) -> R,
++    {
++        match self {
++            Pool::Rayon(pool) => pool.in_place_scope(op),
++            Pool::Inline => rayon::in_place_scope(op),
++        }
++    }
++}
+diff --git a/src/serve/tileset.rs b/src/serve/tileset.rs
+index 59f0bf8..4a5e2e5 100644
+--- a/src/serve/tileset.rs
++++ b/src/serve/tileset.rs
+@@ -5,12 +5,12 @@
+ use std::collections::HashMap;
+ use std::fs::File;
+ use std::io::Read;
+-use std::os::unix::fs::{FileExt, MetadataExt};
+ use std::path::{Path, PathBuf};
+ use std::sync::{Arc, Mutex};
+ 
+ use rusqlite::{Connection, OpenFlags, OptionalExtension};
+ use tippecanoe::jsonpull::{JsonPull, JsonRef, JsonType};
++use tippecanoe::os::{FileExt, MetadataExt};
+ use tippecanoe::pmtiles::{self, EntryV3, HeaderV3};
+ 
+ /// PMTiles' tile type for MapLibre Tiles.
+diff --git a/src/sink/dir.rs b/src/sink/dir.rs
+index f2e112c..6f4f2b9 100644
+--- a/src/sink/dir.rs
++++ b/src/sink/dir.rs
+@@ -12,7 +12,6 @@ use std::collections::HashSet;
+ use std::fs::{self, File, OpenOptions};
+ use std::io::{BufWriter, Write};
+ use std::os::fd::IntoRawFd;
+-use std::os::unix::ffi::OsStrExt;
+ use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
+ use std::sync::{Arc, Mutex};
+ use std::thread::JoinHandle;
+@@ -21,6 +20,7 @@ use tippecanoe::errors::{
+     EXIT_CLOSE, EXIT_EXISTS, EXIT_IMPOSSIBLE, EXIT_OPEN, EXIT_UNLINK, EXIT_WRITE,
+ };
+ use tippecanoe::mbtiles::Metadata;
++use tippecanoe::os::OsStrExt;
+ use tippecanoe::write_json::JsonWriter;
+ 
+ use super::{SinkSettings, TileSink, check_tile, io_message, tileset_metadata, to_string_double};
+diff --git a/src/sink/pmtiles.rs b/src/sink/pmtiles.rs
+index 7e2b1f8..b7a4127 100644
+--- a/src/sink/pmtiles.rs
++++ b/src/sink/pmtiles.rs
+@@ -23,7 +23,6 @@
+ use std::collections::HashMap;
+ use std::fs::{self, File, OpenOptions};
+ use std::hash::{BuildHasherDefault, Hasher};
+-use std::os::unix::fs::FileExt;
+ use std::path::{Path, PathBuf};
+ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+ use std::sync::{Mutex, OnceLock};
+@@ -31,6 +30,7 @@ use std::sync::{Mutex, OnceLock};
+ use rayon::prelude::*;
+ use tippecanoe::errors::{EXIT_EXISTS, EXIT_IMPOSSIBLE, EXIT_OPEN, EXIT_SQLITE, EXIT_WRITE};
+ use tippecanoe::mbtiles::Metadata;
++use tippecanoe::os::FileExt;
+ use tippecanoe::pmtiles::{self, EntryV3, HeaderV3};
+ use tippecanoe::write_json::JsonWriter;
+ 
+diff --git a/src/tiler/engine.rs b/src/tiler/engine.rs
+index dadfc09..4d1035b 100644
+--- a/src/tiler/engine.rs
++++ b/src/tiler/engine.rs
+@@ -1225,6 +1225,23 @@ const COORDINATOR_SPIN: std::time::Duration = std::time::Duration::from_micros(2
+ /// in a virtual machine, where it wakes a virtual processor), while the
+ /// pool runs out of tasks.
+ fn recv_soon(rx: &Receiver<Done>) -> Option<Done> {
++    // Where the pool is this thread alone (WASI), nothing else runs the
++    // tasks, so the coordinator runs them, one at a time, until a result
++    // comes. Tasks never wait on the coordinator, so this cannot deadlock.
++    if cfg!(target_os = "wasi") {
++        loop {
++            match rx.try_recv() {
++                Ok(done) => return Some(done),
++                Err(TryRecvError::Disconnected) => return None,
++                Err(TryRecvError::Empty) => {
++                    if rayon::yield_now() != Some(rayon::Yield::Executed) {
++                        // no task is left to run, so no result can come
++                        return None;
++                    }
++                }
++            }
++        }
++    }
+     let started = std::time::Instant::now();
+     loop {
+         match rx.try_recv() {
+diff --git a/src/tiler/mod.rs b/src/tiler/mod.rs
+index c9d17be..b2a43cf 100644
+--- a/src/tiler/mod.rs
++++ b/src/tiler/mod.rs
+@@ -316,16 +316,8 @@ pub fn tile_with(
+     topts: &TileOptions,
+     sink: &dyn TileSink,
+ ) -> crate::Result<TileStats> {
+-    let threads = if topts.threads == 0 {
+-        std::thread::available_parallelism()
+-            .map(|n| n.get())
+-            .unwrap_or(1)
+-    } else {
+-        topts.threads
+-    };
+-    let pool = rayon::ThreadPoolBuilder::new()
+-        .num_threads(threads)
+-        .build()
++    let threads = crate::pool::thread_count(topts.threads);
++    let pool = crate::pool::Pool::new(threads)
+         .map_err(|e| crate::Error::new(tippecanoe::errors::EXIT_PTHREAD, e.to_string()))?;
+     let started = std::time::Instant::now();
+     let helpers = std::sync::Arc::new(util::Helpers::new(threads.saturating_sub(1)));
+-- 
+2.43.0
+

@@ -1,0 +1,3 @@
+# Nebenprodukte von manby-wasm/tools/build-wasi.sh
+*.o
+*.a
