@@ -1,7 +1,11 @@
-// MATSim Kachelwerk worker: step 1 (MATSim network XML, optionally with its link geometries file,
-// to GeoJSON, when the input is not GeoParquet already) and step 2 (manby.wasm, run through an
-// in-memory WASI, to PMTiles). One compiled module, a new instance per run; the GeoJSON of the
-// last network stays here, so a second run with other options skips step 1.
+// MATSim Kachelwerk worker: step 1 (a MATSim network, optionally with its link geometries file, to
+// GeoJSON) and step 2 (manby.wasm, run through an in-memory WASI, to PMTiles). One compiled
+// module, a new instance per run; the GeoJSON of the last network stays here, so a second run
+// with other options skips step 1.
+//
+// Reading the network follows matsim_trace: every link attribute is kept, true geometries come
+// from the linkGeometries CSV (SUMO reader) or the origgeom attribute (OSM readers), and a link
+// always starts and ends on its nodes. The road classes for the zoom staggering follow tile.py.
 import {
   WASI,
   File as WasiFile,
@@ -58,7 +62,7 @@ async function* lineBatches(bytes) {
   if (rest) yield [rest];
 }
 
-/** One CSV line into fields; quotes may hold the delimiter, "" is a quote. */
+/** One CSV record into fields; quotes may hold the delimiter, "" is a quote. */
 function csvFields(line, delim) {
   const out = [];
   let i = 0;
@@ -98,40 +102,52 @@ function csvFields(line, delim) {
   }
 }
 
-const NUM = String.raw`[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?`;
-const PAREN_LINE = new RegExp(String.raw`^\(${NUM},${NUM}\)(?:,\(${NUM},${NUM}\))+$`);
-const WKT_LINE = /^LINESTRING\s*Z?\s*\(([^()]*)\)$/i;
-
-/** A link geometry as the inside of a GeoJSON coordinates array, or null. */
-function coordinates(text) {
-  const t = text.trim();
-  if (t[0] === "(") {
-    // MATSim's SUMO converter: (x,y),(x,y),… in the network's CRS
-    const compact = t.replace(/\s+/g, "");
-    return PAREN_LINE.test(compact) ? compact.replaceAll("(", "[").replaceAll(")", "]") : null;
+/** Points of a geometry cell as [x0, y0, x1, y1, …]: "(x,y),(x,y)" from the SUMO reader, WKT, or "x y, x y". */
+function parseGeometry(raw) {
+  let t = raw.trim();
+  const wkt = /^LINESTRING\s*Z?\s*\((.*)\)$/is.exec(t);
+  if (wkt) t = wkt[1];
+  const out = [];
+  if (!wkt && t.includes("(")) {
+    for (const group of t.split("(").slice(1)) {
+      const [x, y, extra] = group.split(")")[0].split(",");
+      if (extra !== undefined) continue;
+      const px = Number(x);
+      const py = Number(y);
+      if (Number.isFinite(px) && Number.isFinite(py) && x.trim() && y?.trim()) out.push(px, py);
+    }
+    return out;
   }
-  const wkt = WKT_LINE.exec(t);
-  if (!wkt) return null;
-  const points = wkt[1].split(",").map((p) => p.trim().split(/\s+/).slice(0, 2).map(Number));
-  if (points.length < 2 || points.some((p) => p.length < 2 || !p.every(Number.isFinite))) return null;
-  return points.map((p) => `[${p[0]},${p[1]}]`).join(",");
+  for (const token of t.split(",")) {
+    const [x, y] = token.trim().split(/\s+/);
+    const px = Number(x);
+    const py = Number(y);
+    if (x && y && Number.isFinite(px) && Number.isFinite(py)) out.push(px, py);
+  }
+  return out;
 }
 
-/** A linkGeometries file (LinkId,Geometry) as a map from link id to coordinates. */
+/** A linkGeometries file (LinkId,Geometry) as a map from link id to its points. */
 async function readLinkGeometries(bytes) {
   const map = new Map();
   let delim = null;
   let idCol = 0;
   let geomCol = 1;
   let rows = 0;
-  let bad = 0;
+  let invalid = 0;
+  let record = "";
   for await (const batch of lineBatches(bytes)) {
     for (let line of batch) {
       if (line.endsWith("\r")) line = line.slice(0, -1);
-      if (!line) continue;
+      // a quoted cell may span lines
+      record = record ? `${record}\n${line}` : line;
+      if ((record.split('"').length - 1) % 2 === 1) continue;
+      const text = record;
+      record = "";
+      if (!text) continue;
       if (delim === null) {
-        delim = [",", ";", "\t"].reduce((best, d) => (line.split(d).length > line.split(best).length ? d : best), ",");
-        const head = csvFields(line, delim).map((h) => h.trim().toLowerCase());
+        delim = [",", ";", "\t"].reduce((best, d) => (text.split(d).length > text.split(best).length ? d : best), ",");
+        const head = csvFields(text, delim).map((h) => h.trim().toLowerCase());
         const g = head.findIndex((h) => /geom|wkt|shape|coord/.test(h));
         const i = head.findIndex((h) => /^(link_?id|id|link)$/.test(h));
         if (g >= 0) {
@@ -141,18 +157,22 @@ async function readLinkGeometries(bytes) {
         }
         // no header: the first line is data
       }
-      const f = csvFields(line, delim);
+      const f = csvFields(text, delim);
+      const id = f[idCol]?.trim();
+      const points = f.length > geomCol ? parseGeometry(f[geomCol]) : [];
+      if (!id || points.length < 4) {
+        invalid++;
+        continue;
+      }
       rows++;
-      const c = f.length > geomCol ? coordinates(f[geomCol]) : null;
-      if (c === null) bad++;
-      else map.set(f[idCol], c);
+      map.set(id, Float64Array.from(points));
     }
     status(`Link-Geometrien lesen: ${de(rows)} Zeilen …`);
   }
   if (map.size === 0) {
     throw new Error("Die Geometrie-Datei enthält keine lesbaren Geometrien. Erwartet wird eine CSV mit LinkId und Geometry, z. B. „(x,y),(x,y)“.");
   }
-  return { map, rows, bad };
+  return { map, rows, invalid };
 }
 
 /** GeoJSON features written in encoded pieces, so that no single huge string is built. */
@@ -203,27 +223,210 @@ const unescapeXml = (s) =>
         e[0] === "#" ? String.fromCodePoint(e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : Number(e.slice(1))) : ENTITIES[e] ?? m)
     : s;
 
+// ---------- road classes, as in tile.py ----------
 // a pt link carries only transit modes; a road that buses also use ("car,pt") is not one
 const PT_MODES = new Set(["pt", "bus", "tram", "rail", "train", "subway", "metro", "ferry", "funicular", "gondola", "cablecar", "cable_car", "monorail", "artificial"]);
 const isPtLink = (modes) => {
   const list = modes.split(",").map((m) => m.trim().toLowerCase()).filter(Boolean);
   return list.length > 0 && list.every((m) => PT_MODES.has(m));
 };
+const BIG = new Set(["motorway", "trunk"]);
+const MID = new Set(["primary", "secondary", "tertiary"]);
+const NO_VALUE = new Set(["", "none", "nan", "null", "na", "<na>", "-"]);
+const TRUTHY = new Set(["true", "1", "t", "yes", "y"]);
+const hasValue = (v) => v !== undefined && v !== null && !NO_VALUE.has(String(v).trim().toLowerCase());
+/** 'highway.service|psv' (SUMO reader) and 'service' (OSM) are the same class. */
+const normalizeType = (t) => String(t).trim().toLowerCase().split("|")[0].trim().replace(/^highway\./, "");
+// the layers from bottom to top; the map draws them in this order
+const CLASSES = ["minor_path", "minor_car", "pt", "bike", "main", "motorway"];
+
+/** Radinfrastruktur beats the road class; then motorway, main, pt, and the minor roads by car access. */
+function roadClass(type, modes, extra, pt) {
+  if (hasValue(extra.bicycle_infra)) return "bike";
+  const t = type ? normalizeType(type) : "";
+  if (BIG.has(t)) return "motorway";
+  if (MID.has(t)) return "main";
+  if (pt) return "pt";
+  const car = extra.has_car !== undefined ? TRUTHY.has(String(extra.has_car).trim().toLowerCase()) : /(^|[,\s])car([,\s]|$)/i.test(modes);
+  return car ? "minor_car" : "minor_path";
+}
+
+// ---------- link geometry, as in matsim_trace ----------
+const SAME_POINT_M = 1e-3; // the CSV rounds to 1e-6 m, the network keeps full precision
+const same = (ax, ay, bx, by) => Math.abs(ax - bx) <= SAME_POINT_M && Math.abs(ay - by) <= SAME_POINT_M;
+const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
+
+/** The points between the nodes: CSV points without repeats and without ends that sit on a node. */
+function innerPoints(points, fx, fy, tx, ty) {
+  const shape = [];
+  for (let i = 0; i + 1 < points.length; i += 2) {
+    const n = shape.length;
+    if (n && same(shape[n - 2], shape[n - 1], points[i], points[i + 1])) continue;
+    shape.push(points[i], points[i + 1]);
+  }
+  const onNode = (x, y) => same(x, y, fx, fy) || same(x, y, tx, ty);
+  if (shape.length && onNode(shape[0], shape[1])) shape.splice(0, 2);
+  if (shape.length && onNode(shape[shape.length - 2], shape[shape.length - 1])) shape.splice(-2, 2);
+  return shape;
+}
+
+/** origgeom: "nodeId,x,y nodeId,x,y …", the OSM nodes simplification dropped, without the link's own nodes. */
+function origGeomPoints(raw) {
+  const out = [];
+  for (const token of raw.trim().split(/\s+/)) {
+    const parts = token.split(",");
+    if (parts.length !== 3) continue;
+    const x = Number(parts[1]);
+    const y = Number(parts[2]);
+    if (parts[1] && parts[2] && Number.isFinite(x) && Number.isFinite(y)) out.push(x, y);
+  }
+  return out;
+}
+
+// metres to the centimetre, degrees to 1e-7; manby reprojects and quantizes anyway
+const coord = (v) => (Math.abs(v) > 1000 ? Math.round(v * 100) / 100 : Math.round(v * 1e7) / 1e7);
+
+/**
+ * The link as a GeoJSON geometry: from-node, the inner points (turned round when they run against
+ * the link) and to-node. A link without extent, like the loop at a pt stop, becomes a point, so
+ * that it is in the tiles as well; a line of length 0 would not be.
+ */
+function linkGeometry(fx, fy, tx, ty, shape) {
+  const parts = [];
+  let lx = NaN;
+  let ly = NaN;
+  const push = (x, y) => {
+    const cx = coord(x);
+    const cy = coord(y);
+    if (cx === lx && cy === ly) return;
+    parts.push(`[${cx},${cy}]`);
+    lx = cx;
+    ly = cy;
+  };
+  push(fx, fy);
+  const n = shape.length;
+  if (n) {
+    // MATSim's OsmBicycleReader copies origgeom onto the *_bike-reverse links unchanged
+    const reversed = dist(shape[0], shape[1], tx, ty) + dist(shape[n - 2], shape[n - 1], fx, fy) <
+      dist(shape[0], shape[1], fx, fy) + dist(shape[n - 2], shape[n - 1], tx, ty);
+    if (reversed) for (let i = n - 2; i >= 0; i -= 2) push(shape[i], shape[i + 1]);
+    else for (let i = 0; i < n; i += 2) push(shape[i], shape[i + 1]);
+  }
+  push(tx, ty);
+  return parts.length >= 2 ? `{"type":"LineString","coordinates":[${parts.join(",")}]}` : `{"type":"Point","coordinates":${parts[0]}}`;
+}
+
+// ---------- the network ----------
+const NUMERIC_CLASS = /^java\.lang\.(Double|Float|Integer|Long|Short)$/;
+// matsim_trace types these as numbers whatever class they were written with
+const NUMERIC_EXTRAS = new Set(["allowed_speed", "averageelevation", "elevationgain", "elevationloss", "gradient", "maxgradient"]);
+const RESERVED = new Set(["id", "from", "to", "length", "freespeed", "freespeed_kmh", "capacity", "permlanes", "modes", "pt", "type"]);
+
+function attributeValue(name, cls, raw) {
+  const text = unescapeXml(raw).trim();
+  if ((cls && NUMERIC_CLASS.test(cls)) || NUMERIC_EXTRAS.has(name)) {
+    const n = Number(text);
+    return text && text.toLowerCase() !== "nan" && Number.isFinite(n) ? n : undefined;
+  }
+  if (cls === "java.lang.Boolean") return text === "true";
+  return text || undefined;
+}
 
 /** Step 1 stand-in: a MATSim network (v1 or v2, plain or gzipped) as GeoJSON bytes. */
-async function matsimToGeoJSON(bytes, geometries) {
+async function matsimToGeoJSON(bytes, geometries, stagger) {
   const reader = textReader(bytes);
-  const tagRe = /<(node|link)\s([^>]*)>/g;
+  const tagRe = /<(\/?)(node|link|attribute)\b([^>]*)>/g;
   const attrRe = /([\w:.-]+)="([^"]*)"/g;
   const crsRe = /<attribute\s+name="coordinateReferenceSystem"[^>]*>\s*([^<\s]+)\s*<\/attribute>/;
+  const parseAttrs = (s) => {
+    const a = {};
+    attrRe.lastIndex = 0;
+    let m;
+    while ((m = attrRe.exec(s))) a[m[1]] = m[2];
+    return a;
+  };
   const nodes = new Map();
   const out = new FeatureWriter();
+  const stats = { missing: 0, points: 0, withGeometry: 0, fromCsv: 0, fromOrigGeom: 0, csvMatched: 0, ptLinks: 0, typed: 0, collisions: new Set(), classes: {}, bigBike: 0, midBike: 0, carLink: 0, bikeLink: 0 };
   let rest = "";
   let head = "";
   let crs = null;
-  let missing = 0;
-  let withGeometry = 0;
-  let ptLinks = 0;
+  let link = null; // the open <link>, until </link>
+  let attr = null; // the open <attribute> of that link: { name, cls, text }
+
+  function finishLink(l) {
+    const id = unescapeXml(l.a.id ?? "");
+    const fromId = unescapeXml(l.a.from ?? "");
+    const toId = unescapeXml(l.a.to ?? "");
+    const from = nodes.get(fromId);
+    const to = nodes.get(toId);
+    if (!from || !to) {
+      stats.missing++;
+      return;
+    }
+    const extra = l.extra;
+    const modes = unescapeXml(l.a.modes ?? "");
+    const pt = isPtLink(modes);
+    if (pt) stats.ptLinks++;
+    const type = l.a.type !== undefined ? unescapeXml(l.a.type) : extra.type ?? extra["osm:way:highway"];
+    if (type !== undefined) stats.typed++;
+
+    // geometry: the CSV wins over origgeom, as in matsim_trace
+    let shape = [];
+    const csv = geometries?.get(id);
+    if (csv) {
+      stats.csvMatched++;
+      shape = innerPoints(csv, from[0], from[1], to[0], to[1]);
+      if (shape.length) stats.fromCsv++;
+    }
+    const orig = extra.origgeom;
+    delete extra.origgeom;
+    if (!shape.length && typeof orig === "string") {
+      shape = origGeomPoints(orig);
+      if (shape.length) stats.fromOrigGeom++;
+    }
+    if (shape.length) stats.withGeometry++;
+
+    const freespeed = Number(l.a.freespeed);
+    const props = {
+      id,
+      from: fromId,
+      to: toId,
+      length: Number(l.a.length),
+      freespeed,
+      freespeed_kmh: Math.round(freespeed * 36) / 10,
+      capacity: Number(l.a.capacity),
+      permlanes: Number(l.a.permlanes),
+      modes,
+      pt,
+    };
+    if (type !== undefined) props.type = type;
+    for (const [k, v] of Object.entries(extra)) {
+      if (RESERVED.has(k)) {
+        if (k !== "type") stats.collisions.add(k);
+        continue;
+      }
+      if (v !== undefined) props[k] = v;
+    }
+    if (hasValue(extra.car_link)) stats.carLink++;
+    if (hasValue(extra.bike_link)) stats.bikeLink++;
+
+    let tippecanoe = "";
+    if (stagger) {
+      const cls = roadClass(type, modes, extra, pt);
+      stats.classes[cls] = (stats.classes[cls] ?? 0) + 1;
+      if (cls === "bike" && type) {
+        const t = normalizeType(type);
+        if (BIG.has(t)) stats.bigBike++;
+        else if (MID.has(t)) stats.midBike++;
+      }
+      tippecanoe = `,"tippecanoe":{"layer":"${cls}"}`;
+    }
+    const geometry = linkGeometry(from[0], from[1], to[0], to[1], shape);
+    if (geometry.startsWith('{"type":"Point"')) stats.points++;
+    out.add(`{"type":"Feature"${tippecanoe},"properties":${JSON.stringify(props)},"geometry":${geometry}}`);
+    if (out.count % 50000 === 0) status(`MATSim-Netz lesen: ${de(out.count)} Links …`);
+  }
 
   for (;;) {
     const { value, done } = await reader.read();
@@ -242,58 +445,87 @@ async function matsimToGeoJSON(bytes, geometries) {
       if (m) crs = m[1];
     }
     tagRe.lastIndex = 0;
+    let at = 0;
     let m;
     while ((m = tagRe.exec(chunk))) {
-      const a = {};
-      attrRe.lastIndex = 0;
-      let am;
-      while ((am = attrRe.exec(m[2]))) a[am[1]] = am[2];
-      if (m[1] === "node") {
+      if (attr) attr.text += chunk.slice(at, m.index);
+      at = m.index + m[0].length;
+      const [, closing, tag, body] = m;
+      const selfClosing = body.endsWith("/");
+      if (tag === "node") {
+        if (closing || link) continue;
+        const a = parseAttrs(body);
         const x = Number(a.x);
         const y = Number(a.y);
-        if (Number.isFinite(x) && Number.isFinite(y)) nodes.set(unescapeXml(a.id), `${x},${y}`);
-        continue;
+        if (Number.isFinite(x) && Number.isFinite(y)) nodes.set(unescapeXml(a.id), [x, y]);
+      } else if (tag === "link") {
+        if (closing) {
+          if (link) finishLink(link);
+          link = null;
+          attr = null;
+        } else {
+          const l = { a: parseAttrs(body), extra: {} };
+          if (selfClosing) finishLink(l);
+          else link = l;
+        }
+      } else if (link) {
+        // <attribute> of the open link; those of nodes and of the network are not needed
+        if (closing) {
+          if (attr) {
+            const v = attributeValue(attr.name, attr.cls, attr.text.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1"));
+            if (v !== undefined) link.extra[attr.name] = v;
+          }
+          attr = null;
+        } else {
+          const a = parseAttrs(body);
+          if (!a.name) continue;
+          const name = unescapeXml(a.name).toLowerCase();
+          if (selfClosing) {
+            const v = attributeValue(name, a.class, a.value ?? "");
+            if (v !== undefined) link.extra[name] = v;
+          } else {
+            attr = { name, cls: a.class, text: "" };
+          }
+        }
       }
-      const id = unescapeXml(a.id ?? "");
-      const fromId = unescapeXml(a.from ?? "");
-      const toId = unescapeXml(a.to ?? "");
-      const from = nodes.get(fromId);
-      const to = nodes.get(toId);
-      if (!from || !to) {
-        missing++;
-        continue;
-      }
-      let coords = geometries?.get(id);
-      if (coords) withGeometry++;
-      else coords = `[${from}],[${to}]`;
-      const freespeed = Number(a.freespeed);
-      const modes = unescapeXml(a.modes ?? "");
-      const pt = isPtLink(modes);
-      if (pt) ptLinks++;
-      const properties = JSON.stringify({
-        id,
-        from: fromId,
-        to: toId,
-        length: Number(a.length),
-        freespeed,
-        freespeed_kmh: Math.round(freespeed * 36) / 10,
-        capacity: Number(a.capacity),
-        permlanes: Number(a.permlanes),
-        modes,
-        pt,
-      });
-      out.add(`{"type":"Feature","properties":${properties},"geometry":{"type":"LineString","coordinates":[${coords}]}}`);
-      if (out.count % 50000 === 0) status(`MATSim-Netz lesen: ${de(out.count)} Links …`);
     }
+    if (attr) attr.text += chunk.slice(at);
     if (done) break;
   }
   if (out.count === 0) {
     throw new Error("In der Datei stehen keine <link>-Elemente. Ist es ein MATSim-Netz (network.xml)?");
   }
-  return { bytes: out.finish(), links: out.count, nodes: nodes.size, crs, missing, withGeometry, ptLinks };
+  return { bytes: out.finish(), links: out.count, nodes: nodes.size, crs, stats };
 }
 
-const EXTENSIONS = { parquet: "parquet", geojson: "geojson", fgb: "fgb", csv: "csv" };
+// ---------- zoom staggering ----------
+/** -j for the layers of step 1: a class appears from its zoom on. */
+function layerFilter(zooms) {
+  const f = {};
+  for (const cls of CLASSES) f[cls] = [">=", "$zoom", zooms[cls]];
+  return JSON.stringify(f);
+}
+
+/** -j for GeoParquet (e.g. from matsim_trace), whose features cannot be split into layers: the same zooms on one layer. */
+function parquetFilter(zooms) {
+  const empty = ["", "NONE", "None", "none", "nan", "NaN", "null", "NA", "<NA>", "-"];
+  const bike = ["all", ["has", "bicycle_infra"], ["!in", "bicycle_infra", ...empty]];
+  const noBike = ["any", ["!has", "bicycle_infra"], ["in", "bicycle_infra", ...empty]];
+  // "has" first: manby warns about every comparison with an attribute a feature lacks
+  const types = (list) => ["all", ["has", "type"], ["in", "type", ...list.flatMap((t) => [t, `highway.${t}`])]];
+  const from = (cls) => [">=", "$zoom", zooms[cls]];
+  return JSON.stringify({
+    "*": ["any",
+      from("minor_path"),
+      ["all", from("motorway"), types([...BIG]), noBike],
+      ["all", from("main"), types([...MID]), noBike],
+      ["all", from("bike"), bike],
+      ["all", from("pt"), ["has", "modes"], ["==", "modes", "pt"]],
+      // without has_car every minor road counts as one for cars
+      ["all", from("minor_car"), ["any", ["!has", "has_car"], ["in", "has_car", true, "true", "1", "t", "yes", "y"]]],
+    ],
+  });
+}
 
 // step 1 of the last MATSim network: { key, input, info }
 let prepared = null;
@@ -311,20 +543,47 @@ async function prepareMatsim(job) {
     status("Link-Geometrien lesen …");
     const g = await readLinkGeometries(new Uint8Array(job.geometry));
     geometries = g.map;
-    Object.assign(info, { geometryRows: g.rows, geometryBad: g.bad });
-    log(`Link-Geometrien: ${de(g.map.size)} gelesen` + (g.bad ? `, ${de(g.bad)} Zeilen ohne lesbare Geometrie` : ""));
+    Object.assign(info, { geometryRows: g.rows });
+    log(`Link-Geometrien: ${de(g.rows)} Zeilen` + (g.invalid ? `, ${de(g.invalid)} ohne lesbare Geometrie` : ""));
   }
   status("MATSim-Netz lesen …");
-  const g = await matsimToGeoJSON(new Uint8Array(job.bytes), geometries);
-  Object.assign(info, { links: g.links, nodes: g.nodes, ptLinks: g.ptLinks, crsFromFile: g.crs, missing: g.missing, withGeometry: geometries ? g.withGeometry : null });
+  const g = await matsimToGeoJSON(new Uint8Array(job.bytes), geometries, Boolean(job.stagger));
+  const s = g.stats;
+  Object.assign(info, {
+    links: g.links,
+    nodes: g.nodes,
+    ptLinks: s.ptLinks,
+    crsFromFile: g.crs,
+    missing: s.missing,
+    points: s.points,
+    typed: s.typed,
+    withGeometry: geometries || s.fromOrigGeom ? s.withGeometry : null,
+    classes: job.stagger ? s.classes : null,
+    csvMatched: geometries ? s.csvMatched : null,
+  });
   log(`Schritt 1: ${de(g.links)} Links, ${de(g.nodes)} Knoten` +
-    (geometries ? `, ${de(g.withGeometry)} mit Geometrie aus der Datei` : "") +
-    (g.ptLinks ? `, ${de(g.ptLinks)} pt-Links` : "") +
-    (g.missing ? `, ${de(g.missing)} Links ohne Knoten übersprungen` : "") +
+    (s.ptLinks ? `, ${de(s.ptLinks)} pt-Links` : "") +
+    (s.missing ? `, ${de(s.missing)} Links ohne Knoten übersprungen` : "") +
     `, GeoJSON ${de(Math.round(g.bytes.length / 1048576))} MB`);
+  if (geometries) {
+    log(`Geometrie-CSV: ${de(s.csvMatched)} Zeilen passen zu einem Link, ${de(info.geometryRows - s.csvMatched)} ohne Link; ` +
+      `${de(s.fromCsv)} Links bekommen ihren Verlauf (die übrigen sind schon gerade)`);
+  }
+  if (s.fromOrigGeom) log(`origgeom: ${de(s.fromOrigGeom)} Links bekommen ihren Verlauf aus dem Attribut`);
+  if (s.points) log(`${de(s.points)} Links ohne Ausdehnung (Anfang und Ende am selben Ort, etwa die Schleifen an pt-Haltestellen) als Punkt`);
+  if (s.collisions.size) log(`Link-Attribute übersprungen, weil sie mit festen Spalten kollidieren: ${[...s.collisions].join(", ")}`);
+  if (job.stagger) {
+    log("Klassen: " + CLASSES.slice().reverse().filter((c) => s.classes[c]).map((c) => `${c} ${de(s.classes[c])}`).join(", "));
+    if (!s.typed) log("Warnung: Kein Link hat das Attribut type. Alle Links gelten als Nebenstraße oder Weg (Layer motorway und main bleiben leer).");
+    if (s.bigBike) log(`${de(s.bigBike)} Links der Klasse motorway/trunk haben Radinfrastruktur und liegen deshalb in bike`);
+    if (s.midBike) log(`${de(s.midBike)} Links der Klasse primary/secondary/tertiary haben Radinfrastruktur und liegen deshalb in bike`);
+  }
+  if (s.carLink || s.bikeLink) log(`Split-Link-Paarung: ${de(s.carLink)} Rad-Zwillinge (car_link), ${de(s.bikeLink)} Fahrbahnen mit Zwilling (bike_link)`);
   prepared = { key: job.key, input: g.bytes, info };
   return prepared;
 }
+
+const EXTENSIONS = { parquet: "parquet", geojson: "geojson", fgb: "fgb", csv: "csv" };
 
 async function tile(job) {
   const t0 = performance.now();
@@ -355,12 +614,33 @@ async function tile(job) {
   info.crs = job.kind === "matsim" ? crs : job.kind === "parquet" ? null : crs;
   const t1 = performance.now();
 
-  const args = ["manby", "-l", job.layer, "-n", job.name];
-  args.push(job.maxzoom === "auto" ? "-zg" : `-z${job.maxzoom}`);
-  if (job.dropDensest) args.push("--drop-densest-as-needed");
+  const args = ["manby", "-n", job.name];
+  const zooms = job.stagger;
+  if (zooms) {
+    // every link stays: the classes come in by zoom, and no size limit makes manby drop or give up
+    const fixed = job.maxzoom === "auto" ? null : Number(job.maxzoom);
+    const z = {};
+    for (const cls of CLASSES) z[cls] = fixed === null ? zooms[cls] : Math.min(zooms[cls], fixed);
+    const lowest = Math.min(...CLASSES.map((c) => z[c]));
+    const highest = Math.max(...CLASSES.map((c) => z[c]));
+    // at z13 a tile unit is under a metre in Germany, fine enough that even short links stay lines
+    // (z13 is also tile.py's default)
+    if (fixed === null) args.push(`--smallest-maximum-zoom-guess=${Math.max(highest, 13)}`);
+    else args.push(`-z${fixed}`);
+    args.push(`-Z${lowest}`, "--no-feature-limit", "--no-tile-size-limit");
+    if (job.kind === "matsim") args.push("-j", layerFilter(z));
+    else args.push("-l", job.layer, "-j", parquetFilter(z));
+    if (fixed !== null && CLASSES.some((c) => zooms[c] > fixed)) {
+      log(`Zoomstufen über ${fixed} gelten als ${fixed}, damit kein Link fehlt`);
+    }
+    info.stagger = z;
+  } else {
+    args.push("-l", job.layer, job.maxzoom === "auto" ? "-zg" : `-z${job.maxzoom}`);
+    if (job.dropDensest) args.push("--drop-densest-as-needed");
+  }
   if (crs) args.push("-s", crs);
   args.push(...job.extra, "-o", "/data/out.pmtiles", `/data/${inputName}`);
-  log("$ " + args.join(" "));
+  log("$ " + args.map((a) => (/[\s"{}[\]$]/.test(a) ? `'${a}'` : a)).join(" "));
 
   const module = await modulePromise;
   status("Kacheln …");

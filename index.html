@@ -219,6 +219,21 @@ body {
 .seg button[aria-checked="true"] { background: var(--accent); color: var(--accent-ink); }
 .field .label { font: 600 12.5px/1.2 var(--font-display); letter-spacing: 0.04em; color: var(--muted); }
 .folder-row { margin: -4px 0 0; font-size: 13px; }
+.stagger { gap: 8px; }
+.zooms { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 10px; }
+.zooms label { display: flex; flex-direction: column; gap: 3px; font: 600 12px/1.2 var(--font-display); letter-spacing: 0.03em; color: var(--muted); }
+.zooms input { width: 100%; padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); color: var(--fg); font: 13px/1.3 var(--font-mono); }
+.zooms input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.stagger.off .zooms { opacity: 0.45; }
+.check.disabled, .field.disabled { opacity: 0.5; }
+.classes { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.classes th { padding: 0 0 4px; font: 600 11.5px/1.2 var(--font-display); letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); text-align: left; }
+.classes td { padding: 3px 0; border-top: 1px solid var(--line); }
+.classes .z { width: 3.4em; color: var(--muted); font: 13px/1.4 var(--font-mono); font-variant-numeric: tabular-nums; }
+.classes .n { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.classes tr.empty td { color: var(--muted); }
+.legend-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.legend .zoom { font: 500 11.5px/1.4 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--muted); }
 .chooser { display: flex; flex-direction: column; gap: 6px; }
 .credit { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
 .credit a, .foot a { color: inherit; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); text-underline-offset: 2px; }
@@ -461,7 +476,7 @@ details.log pre {
         <div class="field wide">
           <small id="crs-hint">Gilt, wenn die Datei selbst kein CRS nennt. MATSim-Netze mit dem Attribut <code>coordinateReferenceSystem</code> und GeoParquet mit CRS bringen ihres mit.</small>
         </div>
-        <div class="field">
+        <div class="field" id="layer-field">
           <label for="layer">Layername</label>
           <input type="text" id="layer" value="links" spellcheck="false" autocomplete="off">
         </div>
@@ -469,7 +484,22 @@ details.log pre {
           <label for="extra">Weitere tippecanoe-Optionen</label>
           <input type="text" id="extra" value="" placeholder="z. B. -Z6" spellcheck="false" autocomplete="off">
         </div>
-        <label class="check field wide" for="drop-densest">
+        <div class="field wide stagger" id="stagger-field">
+          <label class="check" for="stagger">
+            <input type="checkbox" id="stagger" checked>
+            <span>Nach Straßenklasse staffeln, alle Links behalten</span>
+          </label>
+          <div class="zooms" id="stagger-zooms" role="group" aria-label="Ab welcher Zoomstufe eine Klasse in den Kacheln liegt">
+            <label>Autobahn<input type="number" id="z-motorway" min="0" max="16" value="4"></label>
+            <label>Hauptstraße<input type="number" id="z-main" min="0" max="16" value="8"></label>
+            <label>Radinfra<input type="number" id="z-bike" min="0" max="16" value="9"></label>
+            <label>pt<input type="number" id="z-pt" min="0" max="16" value="10"></label>
+            <label>Nebenstraße<input type="number" id="z-minor_car" min="0" max="16" value="11"></label>
+            <label>Weg<input type="number" id="z-minor_path" min="0" max="16" value="12"></label>
+          </div>
+          <small>Wie <code>tile.py</code>: Jede Klasse ist ein eigener Layer (<code>motorway</code>, <code>main</code>, <code>bike</code>, <code>pt</code>, <code>minor_car</code>, <code>minor_path</code>) und liegt ab ihrer Zoomstufe in den Kacheln; Radinfrastruktur (<code>bicycle_infra</code>) schlägt die Straßenklasse. Kein Link fällt weg: keine Größenlimits, automatisch bis mindestens z13, Links ohne Ausdehnung (Schleifen an pt-Haltestellen) als Punkt. GeoParquet bekommt dieselben Zoomstufen in einem Layer.</small>
+        </div>
+        <label class="check field wide" for="drop-densest" id="drop-field">
           <input type="checkbox" id="drop-densest" checked>
           <span>Dichteste Features weglassen, wenn eine Kachel zu groß wird <code>--drop-densest-as-needed</code></span>
         </label>
@@ -493,6 +523,11 @@ details.log pre {
         <div><dt>Dauer</dt><dd id="st-time">–</dd></div>
         <div><dt>Speicher</dt><dd id="st-mem">–</dd></div>
       </dl>
+      <table class="classes" id="classes" hidden>
+        <caption class="visually-hidden">Links je Klasse und ab welcher Zoomstufe sie in den Kacheln liegen</caption>
+        <thead><tr><th scope="col">ab</th><th scope="col">Klasse</th><th scope="col" class="n">Links</th></tr></thead>
+        <tbody id="classes-body"></tbody>
+      </table>
       <div class="fields" id="style-fields" hidden>
         <div class="field wide" id="pt-field" hidden>
           <span class="label" id="pt-label">pt-Links</span>
@@ -534,7 +569,7 @@ details.log pre {
     </div>
     <div class="busy" id="busy" hidden>Kacheln …</div>
     <div class="legend" id="legend" hidden>
-      <span class="title" id="legend-title"></span>
+      <div class="legend-head"><span class="title" id="legend-title"></span><span class="zoom" id="legend-zoom"></span></div>
       <div class="ramp"></div>
       <div class="ticks" id="legend-ticks"></div>
     </div>
@@ -662,15 +697,19 @@ details.log pre {
     return expr;
   }
 
-  // lines for networks; other data may also bring areas and points
-  const LAYER_IDS = ["net-fill", "net", "net-point"];
+  // lines for networks; other data may also bring areas and points. With the zoom staggering every
+  // road class is a source layer of its own; the map draws them from minor to major.
+  const CLASS_ORDER = ["minor_path", "minor_car", "pt", "bike", "main", "motorway"];
+  const CLASS_WIDTH = { motorway: 1.7, main: 1.35, bike: 1.2, pt: 1.1, minor_car: 1, minor_path: 0.9 };
+  const overlayIds = () => state.overlay?.layers.map((l) => l.id) ?? [];
+  let placedIds = [];
   const IS_AREA = ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]];
   const IS_POINT = ["in", ["geometry-type"], ["literal", ["Point", "MultiPoint"]]];
   // a MATSim pt link: the attribute pt from step 1, else (GeoParquet) modes that are just "pt"
   const IS_PT = ["case", ["has", "pt"], ["to-boolean", ["get", "pt"]], ["==", ["get", "modes"], "pt"]];
 
-  function layerFilter(id) {
-    const base = id === "net-fill" ? IS_AREA : id === "net-point" ? IS_POINT : ["!", IS_POINT];
+  function layerFilter(layer) {
+    const base = layer.type === "fill" ? IS_AREA : layer.type === "circle" ? IS_POINT : ["!", IS_POINT];
     const pt = state.pt === "without" ? ["!", IS_PT] : state.pt === "only" ? IS_PT : null;
     return pt ? ["all", base, pt] : base;
   }
@@ -685,13 +724,14 @@ details.log pre {
   /** The tiles as layers under the basemap's labels; again after every change of basemap. */
   function placeOverlay() {
     if (!styleReady || !state.overlay) return;
-    for (const id of LAYER_IDS) if (map.getLayer(id)) map.removeLayer(id);
+    for (const id of placedIds) if (map.getLayer(id)) map.removeLayer(id);
     if (map.getSource("net")) map.removeSource("net");
     map.addSource("net", state.overlay.source);
     const before = map.getStyle().layers.find((l) => l.type === "symbol")?.id;
     for (const layer of state.overlay.layers) {
-      map.addLayer({ ...layer, paint: layerPaint(layer), filter: layerFilter(layer.id) }, before);
+      map.addLayer({ ...layer, paint: layerPaint(layer), filter: layerFilter(layer) }, before);
     }
+    placedIds = overlayIds();
   }
 
   function repaintOverlay() {
@@ -703,7 +743,7 @@ details.log pre {
   }
 
   function refilterOverlay() {
-    for (const id of LAYER_IDS) if (map.getLayer(id)) map.setFilter(id, layerFilter(id));
+    for (const layer of state.overlay?.layers ?? []) if (map.getLayer(layer.id)) map.setFilter(layer.id, layerFilter(layer));
   }
 
   // basemaps from OpenFreeMap; the choice is remembered, otherwise it follows the page theme
@@ -779,21 +819,31 @@ details.log pre {
     return max > min ? s : [];
   }
 
-  function numericAttributes(meta, layer) {
+  /** The number attributes over all layers of the tiles, with their range and sample values. */
+  function numericAttributes(meta) {
     const layers = meta?.tilestats?.layers ?? [];
-    const l = layers.find((x) => x.layer === layer) ?? layers[0];
-    const names = new Set((l?.attributes ?? []).map((x) => x.attribute));
-    const attrs = (l?.attributes ?? [])
-      .filter((x) => x.type === "number" && Number.isFinite(x.min) && Number.isFinite(x.max))
-      .map((x) => {
-        const values = (x.values ?? []).filter(Number.isFinite).sort((p, q) => p - q);
-        return { attribute: x.attribute, min: x.min, max: x.max, stops: stopsFor(x.attribute, x.min, x.max, values) };
-      });
+    const names = new Set();
+    const merged = new Map();
+    let count = 0;
+    for (const l of layers) {
+      count += l.count ?? 0;
+      for (const x of l.attributes ?? []) {
+        names.add(x.attribute);
+        if (x.type !== "number" || !Number.isFinite(x.min) || !Number.isFinite(x.max)) continue;
+        const m = merged.get(x.attribute) ?? { attribute: x.attribute, min: Infinity, max: -Infinity, values: [] };
+        m.min = Math.min(m.min, x.min);
+        m.max = Math.max(m.max, x.max);
+        for (const v of x.values ?? []) if (Number.isFinite(v)) m.values.push(v);
+        merged.set(x.attribute, m);
+      }
+    }
+    const attrs = [...merged.values()].map((m) =>
+      ({ attribute: m.attribute, min: m.min, max: m.max, stops: stopsFor(m.attribute, m.min, m.max, m.values.sort((p, q) => p - q)) }));
     attrs.sort((p, q) => {
       const ip = PREFERRED.indexOf(p.attribute), iq = PREFERRED.indexOf(q.attribute);
       return (ip < 0 ? 99 : ip) - (iq < 0 ? 99 : iq) || p.attribute.localeCompare(q.attribute);
     });
-    return { attrs, count: l?.count, names };
+    return { attrs, count: layers.length ? count : undefined, names };
   }
 
   function renderLegend() {
@@ -837,40 +887,54 @@ details.log pre {
     protocol.add(archive);
     const header = await archive.getHeader();
     const meta = (await archive.getMetadata()) ?? {};
-    const { attrs, count, names } = numericAttributes(meta, state.layer);
+    const { attrs, count, names } = numericAttributes(meta);
     state.attrs = attrs;
     state.attr = attrs[0] ?? null;
     renderPt(info, names);
 
-    const common = { source: "net", "source-layer": meta.vector_layers?.[0]?.id ?? state.layer };
+    const rank = (id) => CLASS_ORDER.indexOf(id);
+    const sourceLayers = (meta.vector_layers ?? []).map((l) => l.id).sort((a, b) => rank(a) - rank(b));
+    if (!sourceLayers.length) sourceLayers.push(state.layer);
+    const layers = [];
+    // areas at the bottom, then the lines from minor to major, points on top
+    sourceLayers.forEach((sl, i) => layers.push({ id: `net-fill-${i}`, type: "fill", source: "net", "source-layer": sl, paint: { "fill-opacity": 0.45 } }));
+    sourceLayers.forEach((sl, i) => {
+      const w = CLASS_WIDTH[sl] ?? 1;
+      layers.push({
+        id: `net-line-${i}`,
+        type: "line",
+        source: "net",
+        "source-layer": sl,
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: { "line-width": ["interpolate", ["exponential", 1.6], ["zoom"], 6, 0.35 * w, 10, 0.9 * w, 13, 1.9 * w, 16, 4.5 * w] },
+      });
+    });
+    sourceLayers.forEach((sl, i) => layers.push({
+      id: `net-point-${i}`,
+      type: "circle",
+      source: "net",
+      "source-layer": sl,
+      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 1.8, 10, 3.2, 15, 6], "circle-stroke-width": 0.8 },
+    }));
     state.overlay = {
       source: {
         type: "vector",
         url: `pmtiles://${archive.source.getKey()}`,
         ...(state.source?.credit ? { attribution: state.source.credit } : {}),
       },
-      layers: [
-        { id: "net-fill", type: "fill", ...common, paint: { "fill-opacity": 0.45 } },
-        {
-          id: "net",
-          type: "line",
-          ...common,
-          layout: { "line-cap": "round", "line-join": "round" },
-          paint: { "line-width": ["interpolate", ["exponential", 1.6], ["zoom"], 6, 0.35, 10, 0.9, 13, 1.9, 16, 4.5] },
-        },
-        {
-          id: "net-point",
-          type: "circle",
-          ...common,
-          paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 1.8, 10, 3.2, 15, 6], "circle-stroke-width": 0.8 },
-        },
-      ],
+      layers,
+      sourceLayers,
     };
     placeOverlay();
     // the previous archive is no longer shown; let its bytes go
     if (state.archiveKey) protocol.tiles?.delete?.(state.archiveKey);
     state.archiveKey = archive.source.getKey();
     map.fitBounds([[header.minLon, header.minLat], [header.maxLon, header.maxLat]], { padding: 36, duration: 0, maxZoom: 16 });
+    // staggered without anything at this zoom (a network without road types): in to the first class
+    if (info.stagger) {
+      const first = Math.min(...filledZooms(info));
+      if (map.getZoom() < first) map.jumpTo({ center: map.getCenter(), zoom: first });
+    }
 
     const select = $("color-by");
     select.replaceChildren(...attrs.map((a) => new Option(a.attribute + (UNITS[a.attribute] ? ` (${UNITS[a.attribute]})` : ""), a.attribute)));
@@ -887,6 +951,7 @@ details.log pre {
     $("st-time").textContent = `${de((info.msStep1 + info.msTiling) / 1000, 1)} s`;
     $("st-mem").textContent = mb(info.memory);
     $("stats").hidden = false;
+    renderClasses(info);
   }
 
   $("color-by").addEventListener("change", (e) => {
@@ -897,14 +962,16 @@ details.log pre {
 
   const popup = new maplibregl.Popup({ closeButton: true, maxWidth: "300px" });
   map.on("click", (e) => {
-    const layers = LAYER_IDS.filter((id) => map.getLayer(id));
+    const layers = overlayIds().filter((id) => map.getLayer(id));
     if (!layers.length) return;
     const box = [[e.point.x - 5, e.point.y - 5], [e.point.x + 5, e.point.y + 5]];
     const f = map.queryRenderedFeatures(box, { layers })[0];
     if (!f) return popup.remove();
     const table = document.createElement("table");
     table.className = "props";
-    for (const [k, v] of Object.entries(f.properties)) {
+    const rows = Object.entries(f.properties);
+    if ((state.overlay?.sourceLayers.length ?? 0) > 1) rows.unshift(["Layer", f.sourceLayer]);
+    for (const [k, v] of rows) {
       const tr = table.insertRow();
       const th = document.createElement("th");
       th.textContent = k;
@@ -914,10 +981,19 @@ details.log pre {
     }
     popup.setLngLat(e.lngLat).setDOMContent(table).addTo(map);
   });
-  for (const id of LAYER_IDS) {
-    map.on("mousemove", id, () => (map.getCanvas().style.cursor = "pointer"));
-    map.on("mouseleave", id, () => (map.getCanvas().style.cursor = ""));
-  }
+  let hover = 0;
+  map.on("mousemove", (e) => {
+    if (hover) return;
+    hover = requestAnimationFrame(() => {
+      hover = 0;
+      const layers = overlayIds().filter((id) => map.getLayer(id));
+      const box = [[e.point.x - 3, e.point.y - 3], [e.point.x + 3, e.point.y + 3]];
+      map.getCanvas().style.cursor = layers.length && map.queryRenderedFeatures(box, { layers }).length ? "pointer" : "";
+    });
+  });
+  const showZoom = () => ($("legend-zoom").textContent = `z${de(map.getZoom(), 1)}`);
+  map.on("zoom", showZoom);
+  map.on("load", showZoom);
 
   // ---------- worker ----------
   const logEl = $("log");
@@ -941,7 +1017,15 @@ details.log pre {
     let text = `Fertig in ${de((info.msStep1 + info.msTiling) / 1000, 1)} s`;
     if (info.crs) text += `, umprojiziert aus ${info.crs}`;
     text += ".";
-    if (info.withGeometry === 0) text += " Keine Link-ID aus der Geometrie-Datei passt zum Netz; die Links sind gerade Linien.";
+    if (info.stagger) {
+      const z = filledZooms(info);
+      const range = `nach Klasse gestaffelt ab z${Math.min(...z)} bis z${Math.max(...z)}`;
+      // from z13 on even short links stay lines; links without extent are points
+      const all = info.links != null && (state.job?.maxzoom === "auto" || Number(state.job?.maxzoom) >= 13);
+      text += all ? ` Alle ${de(info.links)} Links sind in den Kacheln, ${range}.` : ` Die ${info.links != null ? "Links" : "Features"} sind ${range} in den Kacheln, ohne Größenlimit.`;
+      if (info.typed === 0) text += " Kein Link hat das Attribut type, deshalb gibt es keine Autobahn- und Hauptstraßen-Layer.";
+    }
+    if (info.csvMatched === 0) text += " Keine Link-ID aus der Geometrie-Datei passt zum Netz; die Links sind gerade Linien.";
     return text;
   }
 
@@ -956,7 +1040,7 @@ details.log pre {
       else if (m.type === "done") {
         state.bytes = m.pmtiles;
         state.workerKey = m.info.key ?? null;
-        state.result = { key: m.info.key, links: m.info.links, withGeometry: m.info.withGeometry, ptLinks: m.info.ptLinks };
+        state.result = { source: state.job?.source, links: m.info.links, withGeometry: m.info.withGeometry, ptLinks: m.info.ptLinks };
         try {
           await show(m.pmtiles, m.info);
           setStatus(doneText(m.info), "done");
@@ -990,7 +1074,8 @@ details.log pre {
     $("run").disabled = !state.source;
   }
 
-  const runKey = () => (state.source?.kind === "matsim" ? `${state.source.id}:${state.geometry?.id ?? 0}` : null);
+  // the network and its geometries; step 1 also depends on whether the links are split into classes
+  const sourceKey = () => (state.source?.kind === "matsim" ? `${state.source.id}:${state.geometry?.id ?? 0}` : null);
 
   function run() {
     if (!state.source) return;
@@ -1011,8 +1096,11 @@ details.log pre {
     const layer = $("layer").value.trim() || (state.source.kind === "matsim" ? "links" : state.name);
     state.layer = layer;
     const extra = $("extra").value.trim();
+    const stagger = staggerOn() && ["matsim", "parquet"].includes(state.source.kind) ? readZooms() : null;
     // the worker keeps step 1 of the last network, so a second run needs no bytes
-    const key = runKey();
+    const source = sourceKey();
+    const key = source === null ? null : `${source}:${stagger ? 1 : 0}`;
+    state.job = { source, maxzoom: $("maxzoom").value };
     const reuse = key !== null && key === state.workerKey;
     const net = reuse ? null : state.source.bytes.slice();
     const geo = reuse || !state.geometry ? null : state.geometry.bytes.slice();
@@ -1025,11 +1113,90 @@ details.log pre {
       layer,
       crs: $("crs").value.trim() || null,
       maxzoom: $("maxzoom").value,
-      dropDensest: $("drop-densest").checked,
+      stagger,
+      dropDensest: !stagger && $("drop-densest").checked,
       extra: extra ? extra.split(/\s+/) : [],
     }, [net?.buffer, geo?.buffer].filter(Boolean));
   }
   $("run").addEventListener("click", run);
+
+  // ---------- zoom staggering by road class, as in tile.py ----------
+  const STAGGER_DEFAULT = { motorway: 4, main: 8, bike: 9, pt: 10, minor_car: 11, minor_path: 12 };
+  const STAGGER_KEYS = Object.keys(STAGGER_DEFAULT); // the order of the inputs and of ?staffel=
+  const CLASS_LABEL = { motorway: "Autobahn", main: "Hauptstraße", bike: "Radinfra", pt: "pt", minor_car: "Nebenstraße", minor_path: "Weg" };
+  const zoomInput = (cls) => $(`z-${cls}`);
+
+  function readZooms() {
+    const z = {};
+    for (const cls of STAGGER_KEYS) {
+      const v = Number.parseInt(zoomInput(cls).value, 10);
+      z[cls] = Number.isFinite(v) ? Math.min(16, Math.max(0, v)) : STAGGER_DEFAULT[cls];
+    }
+    return z;
+  }
+  function writeZooms(z) {
+    for (const cls of STAGGER_KEYS) zoomInput(cls).value = z[cls];
+  }
+  const sameZooms = (a, b) => STAGGER_KEYS.every((c) => a[c] === b[c]);
+  /** Staggering is for networks: MATSim-XML and GeoParquet on the MATSim side. */
+  const staggerOn = () => state.mode === "matsim" && $("stagger").checked;
+
+  function syncStagger() {
+    const on = staggerOn();
+    $("stagger-field").hidden = state.mode !== "matsim";
+    $("stagger-field").classList.toggle("off", !$("stagger").checked);
+    for (const cls of STAGGER_KEYS) zoomInput(cls).disabled = !on;
+    // nothing is dropped while staggering
+    $("drop-densest").disabled = on;
+    $("drop-field").classList.toggle("disabled", on);
+    // the classes name the layers of a network; GeoParquet stays one layer
+    const named = on && state.source?.kind !== "parquet";
+    $("layer").disabled = named;
+    $("layer-field").classList.toggle("disabled", named);
+  }
+  function saveStagger() {
+    store.set("kachelwerk.stagger", JSON.stringify({ on: $("stagger").checked, zooms: readZooms() }));
+  }
+  try {
+    const saved = JSON.parse(store.get("kachelwerk.stagger") ?? "null");
+    if (saved) {
+      $("stagger").checked = saved.on !== false;
+      writeZooms({ ...STAGGER_DEFAULT, ...saved.zooms });
+      writeZooms(readZooms());
+    }
+  } catch { /* nothing usable stored */ }
+  $("stagger").addEventListener("change", () => {
+    syncStagger();
+    saveStagger();
+  });
+  for (const cls of STAGGER_KEYS) {
+    zoomInput(cls).addEventListener("change", () => {
+      writeZooms(readZooms());
+      saveStagger();
+    });
+  }
+
+  /** The zooms of the classes that have links (all of them for GeoParquet, whose classes are not counted). */
+  const filledZooms = (info) => {
+    const z = STAGGER_KEYS.filter((c) => !info.classes || info.classes[c] > 0).map((c) => info.stagger[c]);
+    return z.length ? z : Object.values(info.stagger);
+  };
+
+  /** Links per class and the zoom each class starts at; GeoParquet's classes are not counted. */
+  function renderClasses(info) {
+    $("classes").hidden = !info?.stagger;
+    $("classes-body").replaceChildren(...(info?.stagger ? STAGGER_KEYS : []).map((cls) => {
+      const tr = document.createElement("tr");
+      const n = info.classes ? info.classes[cls] ?? 0 : null;
+      tr.className = n === 0 ? "empty" : "";
+      for (const [value, cell] of [[`z${info.stagger[cls]}`, "z"], [CLASS_LABEL[cls], "c"], [n === null ? "–" : de(n), "n"]]) {
+        const td = tr.insertCell();
+        td.className = cell;
+        td.textContent = value;
+      }
+      return tr;
+    }));
+  }
 
   // ---------- kind of input ----------
   function setMode(mode, { remember = true } = {}) {
@@ -1053,6 +1220,7 @@ details.log pre {
     $("chooser").hidden = true;
     if (!state.source && $("status").dataset.state === "idle") $("status-text").textContent = m.waiting;
     if (svn.url) renderSvn();
+    syncStagger();
     if (remember) store.set("kachelwerk.mode", mode);
   }
   $("mode").addEventListener("click", (e) => {
@@ -1140,6 +1308,7 @@ details.log pre {
     // a network belongs to the MATSim side, GeoJSON, FlatGeobuf and CSV to the other one
     if (src.kind === "matsim") setMode("matsim", { remember: false });
     else if (src.kind !== "parquet") setMode("geo", { remember: false });
+    syncStagger();
     renderSource();
   }
 
@@ -1196,7 +1365,7 @@ details.log pre {
       strong.textContent = g.name;
       text.append("Link-Geometrien: ", strong, ` (${mb(g.bytes.length)})`);
       const r = state.result;
-      if (r && r.key === runKey() && r.withGeometry != null) text.append(` · ${de(r.withGeometry)} von ${de(r.links)} Links`);
+      if (r && r.source === sourceKey() && r.withGeometry != null) text.append(` · ${de(r.withGeometry)} von ${de(r.links)} Links mit Verlauf`);
     } else if (src.url && !src.example) {
       text.append("Keine Link-Geometrien gefunden, die Links sind gerade Linien.");
     } else if (src.url) {
@@ -1643,7 +1812,8 @@ details.log pre {
   });
 
   // ---------- links ----------
-  // MATSim: ?net=<path below countries/de/ or address>&geo=<path from the network's folder, address or 0>&pt=ohne|nur&crs=…
+  // MATSim: ?net=<path below countries/de/ or address>&geo=<path from the network's folder, address or 0>&pt=ohne|nur
+  //         &staffel=0 (not staggered) or six zooms motorway,main,bike,pt,minor_car,minor_path&crs=…
   // other data: ?data=<path or address>&crs=…
   function relativeTo(folder, url) {
     if (url.startsWith(folder)) return url.slice(folder.length);
@@ -1670,12 +1840,15 @@ details.log pre {
         else if (g.url) p.set("geo", relativeTo(folderOf(src.url), g.url));
       }
       if (state.pt !== "all") p.set("pt", state.pt === "without" ? "ohne" : "nur");
+      const zooms = readZooms();
+      if (!$("stagger").checked) p.set("staffel", "0");
+      else if (!sameZooms(zooms, STAGGER_DEFAULT)) p.set("staffel", STAGGER_KEYS.map((c) => zooms[c]).join(","));
     } else {
       p.set("data", short);
     }
     const crs = $("crs").value.trim();
     if (crs && crs !== (state.mode === "matsim" ? DEFAULT_CRS : "")) p.set("crs", crs);
-    history.replaceState(null, "", `${location.pathname}?${p.toString().replaceAll("%2F", "/")}`);
+    history.replaceState(null, "", `${location.pathname}?${p.toString().replaceAll("%2F", "/").replaceAll("%2C", ",")}`);
   }
   function clearLink() {
     if (location.search) history.replaceState(null, "", location.pathname);
@@ -1772,6 +1945,16 @@ details.log pre {
   const linkedNet = resolve(params.get("net"));
   const linkedData = resolve(params.get("data"));
   state.pt = { ohne: "without", nur: "only" }[params.get("pt")] ?? "all";
+  if (linkedNet && !linkedData) {
+    // a link brings the staggering it was made with, not the one stored here
+    const staffel = params.get("staffel");
+    const list = (staffel ?? "").split(",").map(Number);
+    $("stagger").checked = staffel !== "0";
+    writeZooms(list.length === STAGGER_KEYS.length && list.every(Number.isInteger)
+      ? Object.fromEntries(STAGGER_KEYS.map((c, i) => [c, list[i]]))
+      : STAGGER_DEFAULT);
+    writeZooms(readZooms());
+  }
   setMode(linkedData ? "geo" : linkedNet ? "matsim" : store.get("kachelwerk.mode") ?? "matsim", { remember: false });
   if (params.get("crs")) $("crs").value = params.get("crs");
   const linked = linkedData ?? linkedNet;
