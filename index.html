@@ -220,19 +220,62 @@ body {
 .field .label { font: 600 12.5px/1.2 var(--font-display); letter-spacing: 0.04em; color: var(--muted); }
 .folder-row { margin: -4px 0 0; font-size: 13px; }
 .stagger { gap: 8px; }
-.zooms { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 10px; }
-.zooms label { display: flex; flex-direction: column; gap: 3px; font: 600 12px/1.2 var(--font-display); letter-spacing: 0.03em; color: var(--muted); }
-.zooms input { width: 100%; padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); color: var(--fg); font: 13px/1.3 var(--font-mono); }
-.zooms input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.stagger.off .zooms { opacity: 0.45; }
+/* the layer list */
+.layers { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; }
+.layer + .layer { border-top: 1px solid var(--line); }
+.layer summary { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 7px 10px; cursor: pointer; font-size: 14px; list-style: none; }
+.layer summary::-webkit-details-marker { display: none; }
+.layer summary::after { content: ""; flex: none; width: 7px; height: 7px; margin-left: 2px; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: rotate(45deg) translateY(-2px); transition: transform 120ms; }
+.layer details[open] > summary::after { transform: rotate(225deg) translate(-2px, 0); }
+.layer summary:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.layer details[open] > summary { border-bottom: 1px dashed var(--line); }
+.sample { flex: none; display: inline-block; width: 22px; height: 0; border-top: var(--w, 2px) solid var(--c, var(--muted)); border-radius: 2px; vertical-align: middle; }
+.sample.dash { border-top-style: dashed; }
+.lname { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.lrule { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 13px; }
+.lzoom { flex: none; font: 12.5px/1.4 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--muted); }
+.lbody { display: flex; flex-direction: column; gap: 8px; padding: 10px 10px 12px; }
+.lrow { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 10px; }
+.lf { display: flex; flex-direction: column; gap: 3px; min-width: 0; font: 600 12px/1.2 var(--font-display); letter-spacing: 0.03em; color: var(--muted); }
+.lf.grow { flex: 1 1 140px; }
+.layers .lf input:not([type="checkbox"]):not([type="color"]), .layers .lf select { width: 100%; min-width: 0; padding: 6px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--fg); font: 13.5px/1.3 var(--font-mono); }
+.layers .lf input[type="number"] { width: 6.2em; }
+.layers .lf select { font-family: var(--font-body); }
+.layers .lf input:focus-visible, .layers .lf select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.lf .label { font: inherit; }
+.lhint { margin: -2px 0 0; color: var(--muted); font-size: 12.5px; }
+.vchips { display: flex; flex-wrap: wrap; gap: 4px; max-height: 172px; overflow-y: auto; }
+.vchip { display: inline-flex; align-items: baseline; gap: 4px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 99px; background: var(--bg); color: var(--fg); font: 12.5px/1.45 var(--font-mono); cursor: pointer; }
+.vchip span { color: var(--muted); font-size: 11.5px; }
+.vchip[aria-pressed="true"] { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
+.vchip[aria-pressed="true"] span { color: inherit; opacity: 0.8; }
+.swatches { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.sw { width: 20px; height: 20px; padding: 0; border: 2px solid var(--surface); border-radius: 50%; background: var(--c); box-shadow: 0 0 0 1px var(--line); cursor: pointer; }
+.sw[aria-checked="true"] { box-shadow: 0 0 0 2px var(--fg); }
+.swatches .l-custom { flex: none; width: 28px; height: 22px; padding: 0 2px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); cursor: pointer; }
+.swatches .l-custom.on { box-shadow: 0 0 0 2px var(--fg); }
+.l-dash-label { padding-bottom: 5px; font-size: 13.5px; }
+.ltools { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.ltools .linkbtn:disabled { color: var(--muted); text-decoration: none; cursor: default; opacity: 0.6; }
+.layers-actions { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px; }
+.layers-actions .linkbtn:disabled { color: var(--muted); text-decoration: none; cursor: default; }
+.layers-note { margin-top: 6px; }
+.layers-note.pending { color: var(--fg); }
+.btn.pending { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent); }
 .check.disabled, .field.disabled { opacity: 0.5; }
 .classes { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .classes th { padding: 0 0 4px; font: 600 11.5px/1.2 var(--font-display); letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); text-align: left; }
 .classes td { padding: 3px 0; border-top: 1px solid var(--line); }
 .classes .z { width: 3.4em; color: var(--muted); font: 13px/1.4 var(--font-mono); font-variant-numeric: tabular-nums; }
 .classes .n { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.classes .c .sample { margin-right: 8px; }
 .classes tr.empty td { color: var(--muted); }
 .legend-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.legend.by-layer .ramp { display: none; }
+.legend.by-layer .ticks { display: grid; grid-template-columns: repeat(2, auto); justify-content: start; gap: 2px 14px; margin-top: 4px; }
+.legend .lg { display: flex; align-items: center; gap: 6px; font-size: 12.5px; white-space: nowrap; }
+.legend .lg .sample { width: 18px; }
+.legend .lgz { color: var(--muted); font: 11.5px/1.4 var(--font-mono); }
 .legend .zoom { font: 500 11.5px/1.4 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--muted); }
 .chooser { display: flex; flex-direction: column; gap: 6px; }
 .credit { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
@@ -487,17 +530,19 @@ details.log pre {
         <div class="field wide stagger" id="stagger-field">
           <label class="check" for="stagger">
             <input type="checkbox" id="stagger" checked>
-            <span>Nach Straßenklasse staffeln, alle Links behalten</span>
+            <span>In Layer aufteilen und staffeln, alle Links behalten</span>
           </label>
-          <div class="zooms" id="stagger-zooms" role="group" aria-label="Ab welcher Zoomstufe eine Klasse in den Kacheln liegt">
-            <label>Autobahn<input type="number" id="z-motorway" min="0" max="16" value="4"></label>
-            <label>Hauptstraße<input type="number" id="z-main" min="0" max="16" value="8"></label>
-            <label>Radinfra<input type="number" id="z-bike" min="0" max="16" value="9"></label>
-            <label>pt<input type="number" id="z-pt" min="0" max="16" value="10"></label>
-            <label>Nebenstraße<input type="number" id="z-minor_car" min="0" max="16" value="11"></label>
-            <label>Weg<input type="number" id="z-minor_path" min="0" max="16" value="12"></label>
+          <div class="layers-wrap" id="layers-wrap">
+            <ol class="layers" id="layers" aria-label="Layer, die oberste Regel hat Vorrang"></ol>
+            <div class="layers-actions">
+              <button type="button" class="linkbtn" id="layer-add">Layer hinzufügen</button>
+              <button type="button" class="linkbtn" id="layer-reset">Vorgabe aus tile.py</button>
+            </div>
+            <p class="note layers-note" id="layers-undo" hidden><span id="layers-undo-text"></span> <button type="button" class="linkbtn" id="layers-undo-btn">Rückgängig</button></p>
+            <p class="note layers-note pending" id="layers-pending" hidden>Geändert: Erst beim nächsten Kacheln gelten Regeln und Zoomstufen. Farbe, Breite und Strich wirken sofort.</p>
           </div>
-          <small>Wie <code>tile.py</code>: Jede Klasse ist ein eigener Layer (<code>motorway</code>, <code>main</code>, <code>bike</code>, <code>pt</code>, <code>minor_car</code>, <code>minor_path</code>) und liegt ab ihrer Zoomstufe in den Kacheln; Radinfrastruktur (<code>bicycle_infra</code>) schlägt die Straßenklasse. Kein Link fällt weg: keine Größenlimits, automatisch bis mindestens z13, Links ohne Ausdehnung (Schleifen an pt-Haltestellen) als Punkt. GeoParquet bekommt dieselben Zoomstufen in einem Layer.</small>
+          <small>Ein Link kommt in den ersten Layer, dessen Regel passt; der letzte nimmt alle übrigen. Jeder Layer liegt ab seiner Zoomstufe in den Kacheln. Kein Link fällt weg: keine Größenlimits, automatisch bis mindestens z13, Links ohne Ausdehnung als Punkt. Die Vorgabe sind die Klassen aus <code>tile.py</code>, dazu ein Layer für pt.</small>
+          <datalist id="attr-list"></datalist>
         </div>
         <label class="check field wide" for="drop-densest" id="drop-field">
           <input type="checkbox" id="drop-densest" checked>
@@ -688,6 +733,7 @@ details.log pre {
     placeOverlay();
   });
 
+  const BY_LAYER = "__layer";
   function colorExpression() {
     const a = state.attr;
     if (!a || a.stops.length < 2) return mapCss("--ramp-3");
@@ -697,10 +743,9 @@ details.log pre {
     return expr;
   }
 
-  // lines for networks; other data may also bring areas and points. With the zoom staggering every
-  // road class is a source layer of its own; the map draws them from minor to major.
-  const CLASS_ORDER = ["minor_path", "minor_car", "pt", "bike", "main", "motorway"];
-  const CLASS_WIDTH = { motorway: 1.7, main: 1.35, bike: 1.2, pt: 1.1, minor_car: 1, minor_path: 0.9 };
+  // lines for networks; other data may also bring areas and points. Staggered, every layer of the
+  // rules is a source layer of its own, drawn from the late (minor) ones up to the early ones.
+  const LINE_WIDTH = [6, 0.35, 10, 0.9, 13, 1.9, 16, 4.5]; // zoom, px
   const overlayIds = () => state.overlay?.layers.map((l) => l.id) ?? [];
   let placedIds = [];
   const IS_AREA = ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]];
@@ -715,10 +760,15 @@ details.log pre {
   }
 
   function layerPaint(layer) {
-    const color = colorExpression();
+    const rule = layerFor(layer["source-layer"]);
+    const color = state.colorBy === BY_LAYER && rule ? colorOf(rule) : colorExpression();
     if (layer.type === "fill") return { ...layer.paint, "fill-color": color };
     if (layer.type === "circle") return { ...layer.paint, "circle-color": color, "circle-stroke-color": mapCss("--halo") };
-    return { ...layer.paint, "line-color": color };
+    const w = rule?.width ?? 1;
+    const width = ["interpolate", ["exponential", 1.6], ["zoom"]];
+    for (let i = 0; i < LINE_WIDTH.length; i += 2) width.push(LINE_WIDTH[i], LINE_WIDTH[i + 1] * w);
+    // solid lines have no dasharray at all; undefined resets it when the dashes go
+    return { ...layer.paint, "line-color": color, "line-width": width, "line-dasharray": rule?.dash ? [2, 1.6] : undefined };
   }
 
   /** The tiles as layers under the basemap's labels; again after every change of basemap. */
@@ -729,7 +779,8 @@ details.log pre {
     map.addSource("net", state.overlay.source);
     const before = map.getStyle().layers.find((l) => l.type === "symbol")?.id;
     for (const layer of state.overlay.layers) {
-      map.addLayer({ ...layer, paint: layerPaint(layer), filter: layerFilter(layer) }, before);
+      const paint = Object.fromEntries(Object.entries(layerPaint(layer)).filter(([, v]) => v !== undefined));
+      map.addLayer({ ...layer, paint, filter: layerFilter(layer) }, before);
     }
     placedIds = overlayIds();
   }
@@ -771,6 +822,18 @@ details.log pre {
     state.basemap = name;
     mapwrap.dataset.basemap = name;
     for (const b of $("basemap").querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.value === name));
+    refreshLayerColors();
+  }
+
+  /** The layer colours follow the basemap's light or dark steps: in the list, the legend and the table. */
+  function refreshLayerColors() {
+    if (!state.layers) return;
+    for (const li of $("layers").querySelectorAll(".layer")) {
+      const l = state.layers.find((x) => x.uid === Number(li.dataset.uid));
+      if (l) updateItem(li, l);
+    }
+    renderLegend();
+    renderLayerTable();
   }
 
   async function setBasemap(name) {
@@ -847,6 +910,32 @@ details.log pre {
   }
 
   function renderLegend() {
+    const byLayer = state.colorBy === BY_LAYER && state.overlay;
+    $("legend").classList.toggle("by-layer", Boolean(byLayer));
+    if (byLayer) {
+      $("legend").hidden = false;
+      $("legend-title").textContent = "Layer";
+      const rows = state.overlay.sourceLayers.slice().reverse().map((sl) => {
+        const l = layerFor(sl);
+        const row = document.createElement("span");
+        row.className = "lg";
+        const sample = document.createElement("span");
+        sample.className = "sample";
+        if (l) {
+          sample.style.setProperty("--c", colorOf(l));
+          sample.style.setProperty("--w", `${Math.max(1.5, Math.min(6, 2.2 * l.width)).toFixed(1)}px`);
+          sample.classList.toggle("dash", l.dash);
+        }
+        const zoom = state.shownInfo?.layers?.find((x) => x.name === sl)?.zoom;
+        const z = document.createElement("span");
+        z.className = "lgz";
+        z.textContent = zoom != null ? `z${zoom}` : "";
+        row.append(sample, `${sl} `, z);
+        return row;
+      });
+      $("legend-ticks").replaceChildren(...rows);
+      return;
+    }
     const a = state.attr;
     $("legend").hidden = !a || a.stops.length < 2;
     if ($("legend").hidden) return;
@@ -890,24 +979,23 @@ details.log pre {
     const { attrs, count, names } = numericAttributes(meta);
     state.attrs = attrs;
     state.attr = attrs[0] ?? null;
+    state.shownInfo = info;
     renderPt(info, names);
 
-    const rank = (id) => CLASS_ORDER.indexOf(id);
+    // bottom to top: the layers that come in late (minor roads) first; among equal zooms the later rule
+    const order = info.layers ?? [];
+    const rank = (id) => {
+      const i = order.findIndex((l) => l.name === id);
+      return i < 0 ? -Infinity : -order[i].zoom * 100 - i;
+    };
     const sourceLayers = (meta.vector_layers ?? []).map((l) => l.id).sort((a, b) => rank(a) - rank(b));
     if (!sourceLayers.length) sourceLayers.push(state.layer);
+    state.colorBy = sourceLayers.length > 1 ? BY_LAYER : state.attr?.attribute ?? "";
     const layers = [];
     // areas at the bottom, then the lines from minor to major, points on top
     sourceLayers.forEach((sl, i) => layers.push({ id: `net-fill-${i}`, type: "fill", source: "net", "source-layer": sl, paint: { "fill-opacity": 0.45 } }));
     sourceLayers.forEach((sl, i) => {
-      const w = CLASS_WIDTH[sl] ?? 1;
-      layers.push({
-        id: `net-line-${i}`,
-        type: "line",
-        source: "net",
-        "source-layer": sl,
-        layout: { "line-cap": "round", "line-join": "round" },
-        paint: { "line-width": ["interpolate", ["exponential", 1.6], ["zoom"], 6, 0.35 * w, 10, 0.9 * w, 13, 1.9 * w, 16, 4.5 * w] },
-      });
+      layers.push({ id: `net-line-${i}`, type: "line", source: "net", "source-layer": sl, layout: { "line-cap": "round", "line-join": "round" }, paint: {} });
     });
     sourceLayers.forEach((sl, i) => layers.push({
       id: `net-point-${i}`,
@@ -924,22 +1012,24 @@ details.log pre {
       },
       layers,
       sourceLayers,
+      uids: state.job?.uids ?? {},
     };
     placeOverlay();
     // the previous archive is no longer shown; let its bytes go
     if (state.archiveKey) protocol.tiles?.delete?.(state.archiveKey);
     state.archiveKey = archive.source.getKey();
     map.fitBounds([[header.minLon, header.minLat], [header.maxLon, header.maxLat]], { padding: 36, duration: 0, maxZoom: 16 });
-    // staggered without anything at this zoom (a network without road types): in to the first class
-    if (info.stagger) {
+    // staggered without anything at this zoom (a network without road types): in to the first layer
+    if (info.layers) {
       const first = Math.min(...filledZooms(info));
       if (map.getZoom() < first) map.jumpTo({ center: map.getCenter(), zoom: first });
     }
 
     const select = $("color-by");
     select.replaceChildren(...attrs.map((a) => new Option(a.attribute + (UNITS[a.attribute] ? ` (${UNITS[a.attribute]})` : ""), a.attribute)));
+    if (sourceLayers.length > 1) select.prepend(new Option("Layer", BY_LAYER));
     select.append(new Option("einfarbig", ""));
-    select.value = state.attr?.attribute ?? "";
+    select.value = state.colorBy;
     $("style-fields").hidden = false;
     renderLegend();
 
@@ -951,10 +1041,11 @@ details.log pre {
     $("st-time").textContent = `${de((info.msStep1 + info.msTiling) / 1000, 1)} s`;
     $("st-mem").textContent = mb(info.memory);
     $("stats").hidden = false;
-    renderClasses(info);
+    renderLayerTable();
   }
 
   $("color-by").addEventListener("change", (e) => {
+    state.colorBy = e.target.value;
     state.attr = state.attrs.find((a) => a.attribute === e.target.value) ?? null;
     repaintOverlay();
     renderLegend();
@@ -1017,13 +1108,13 @@ details.log pre {
     let text = `Fertig in ${de((info.msStep1 + info.msTiling) / 1000, 1)} s`;
     if (info.crs) text += `, umprojiziert aus ${info.crs}`;
     text += ".";
-    if (info.stagger) {
+    if (info.layers) {
       const z = filledZooms(info);
-      const range = `nach Klasse gestaffelt ab z${Math.min(...z)} bis z${Math.max(...z)}`;
+      const filled = info.layerCounts ? info.layers.filter((l) => l.n > 0).length : info.layers.length;
+      const range = `in ${filled} Layern gestaffelt ab z${Math.min(...z)} bis z${Math.max(...z)}`;
       // from z13 on even short links stay lines; links without extent are points
       const all = info.links != null && (state.job?.maxzoom === "auto" || Number(state.job?.maxzoom) >= 13);
       text += all ? ` Alle ${de(info.links)} Links sind in den Kacheln, ${range}.` : ` Die ${info.links != null ? "Links" : "Features"} sind ${range} in den Kacheln, ohne Größenlimit.`;
-      if (info.typed === 0) text += " Kein Link hat das Attribut type, deshalb gibt es keine Autobahn- und Hauptstraßen-Layer.";
     }
     if (info.csvMatched === 0) text += " Keine Link-ID aus der Geometrie-Datei passt zum Netz; die Links sind gerade Linien.";
     return text;
@@ -1041,8 +1132,14 @@ details.log pre {
         state.bytes = m.pmtiles;
         state.workerKey = m.info.key ?? null;
         state.result = { source: state.job?.source, links: m.info.links, withGeometry: m.info.withGeometry, ptLinks: m.info.ptLinks };
+        state.ranRules = state.job?.ran ?? null;
+        if (m.info.catalog && m.info.catalog !== state.catalog) {
+          state.catalog = m.info.catalog;
+          state.catalogId++;
+        }
         try {
           await show(m.pmtiles, m.info);
+          renderLayers();
           setStatus(doneText(m.info), "done");
           renderSource();
           offerSave();
@@ -1074,8 +1171,12 @@ details.log pre {
     $("run").disabled = !state.source;
   }
 
-  // the network and its geometries; step 1 also depends on whether the links are split into classes
-  const sourceKey = () => (state.source?.kind === "matsim" ? `${state.source.id}:${state.geometry?.id ?? 0}` : null);
+  // the network and its geometries (GeoParquet when the page reads it); step 1 also depends on the rules
+  const sourceKey = () => {
+    const kind = state.source?.kind;
+    if (kind === "matsim") return `${state.source.id}:${state.geometry?.id ?? 0}`;
+    return kind === "parquet" && staggerOn() ? `${state.source.id}:0` : null;
+  };
 
   function run() {
     if (!state.source) return;
@@ -1096,11 +1197,18 @@ details.log pre {
     const layer = $("layer").value.trim() || (state.source.kind === "matsim" ? "links" : state.name);
     state.layer = layer;
     const extra = $("extra").value.trim();
-    const stagger = staggerOn() && ["matsim", "parquet"].includes(state.source.kind) ? readZooms() : null;
+    const staggered = staggerOn() && ["matsim", "parquet"].includes(state.source.kind);
+    if (staggered) cleanNames(state.layers);
+    const layers = staggered ? state.layers.map(({ name, zoom, attr, op, values }) => ({ name, zoom, attr, op, values: [...values] })) : null;
     // the worker keeps step 1 of the last network, so a second run needs no bytes
     const source = sourceKey();
-    const key = source === null ? null : `${source}:${stagger ? 1 : 0}`;
-    state.job = { source, maxzoom: $("maxzoom").value };
+    const key = source === null ? null : `${source}:${layers ? hash(rulesKey()) : 0}`;
+    state.job = {
+      source,
+      maxzoom: $("maxzoom").value,
+      ran: layers ? { rules: rulesKey(), zooms: zoomsKey() } : null,
+      uids: Object.fromEntries(state.layers.map((l) => [l.name, l.uid])),
+    };
     const reuse = key !== null && key === state.workerKey;
     const net = reuse ? null : state.source.bytes.slice();
     const geo = reuse || !state.geometry ? null : state.geometry.bytes.slice();
@@ -1113,87 +1221,577 @@ details.log pre {
       layer,
       crs: $("crs").value.trim() || null,
       maxzoom: $("maxzoom").value,
-      stagger,
-      dropDensest: !stagger && $("drop-densest").checked,
+      layers,
+      dropDensest: !layers && $("drop-densest").checked,
       extra: extra ? extra.split(/\s+/) : [],
     }, [net?.buffer, geo?.buffer].filter(Boolean));
   }
   $("run").addEventListener("click", run);
 
-  // ---------- zoom staggering by road class, as in tile.py ----------
-  const STAGGER_DEFAULT = { motorway: 4, main: 8, bike: 9, pt: 10, minor_car: 11, minor_path: 12 };
-  const STAGGER_KEYS = Object.keys(STAGGER_DEFAULT); // the order of the inputs and of ?staffel=
-  const CLASS_LABEL = { motorway: "Autobahn", main: "Hauptstraße", bike: "Radinfra", pt: "pt", minor_car: "Nebenstraße", minor_path: "Weg" };
-  const zoomInput = (cls) => $(`z-${cls}`);
+  // ---------- layers: which link goes where, from which zoom, and how it looks ----------
+  // Colours follow the basemap, light step and dark step. The first three are the only hues that
+  // stay apart as all pairs for colour-blind readers too, so the preset gives them to the main
+  // classes; pt is told apart by its dashes, the minor roads by grey and width.
+  const HUES = {
+    blue: ["#2a78d6", "#3987e5"],
+    orange: ["#eb6834", "#d95926"],
+    aqua: ["#1baf7a", "#199e70"],
+    violet: ["#6250d6", "#9085e9"],
+    magenta: ["#e87ba4", "#d55181"],
+    yellow: ["#eda100", "#c98500"],
+    green: ["#008300", "#008300"],
+    red: ["#e34948", "#e66767"],
+    ink: ["#52514e", "#c3c2b7"],
+    gray: ["#898781", "#898781"],
+    lightgray: ["#b5b3aa", "#55544f"],
+  };
+  const HUE_LABEL = {
+    blue: "Blau", orange: "Orange", aqua: "Türkis", violet: "Violett", magenta: "Magenta", yellow: "Gelb",
+    green: "Grün", red: "Rot", ink: "Dunkelgrau", gray: "Grau", lightgray: "Hellgrau",
+  };
+  // tile.py's classes, the first that matches wins; pt is a layer of its own here
+  const PRESET = [
+    { name: "bike", zoom: 9, attr: "bicycle_infra", op: "has", values: [], color: "aqua", width: 1.2, dash: false },
+    { name: "motorway", zoom: 4, attr: "type", op: "in", values: ["motorway", "trunk"], color: "blue", width: 1.7, dash: false },
+    { name: "main", zoom: 8, attr: "type", op: "in", values: ["primary", "secondary", "tertiary"], color: "orange", width: 1.35, dash: false },
+    { name: "pt", zoom: 10, attr: "pt", op: "true", values: [], color: "ink", width: 1.1, dash: true },
+    { name: "minor_car", zoom: 11, attr: "modes", op: "contains", values: ["car"], color: "gray", width: 1, dash: false },
+    { name: "minor_path", zoom: 12, attr: "", op: "rest", values: [], color: "lightgray", width: 0.8, dash: false },
+  ];
+  // the order of the six zooms in the older ?staffel=4,8,9,10,11,12
+  const LEGACY_ORDER = ["motorway", "main", "bike", "pt", "minor_car", "minor_path"];
+  const OPS = { in: "ist einer von", contains: "enthält", has: "hat einen Wert", true: "ist wahr", gte: "mindestens", lte: "höchstens" };
+  const NEEDS_VALUES = new Set(["in", "contains", "gte", "lte"]);
+  const MAX_LAYERS = 8;
 
-  function readZooms() {
-    const z = {};
-    for (const cls of STAGGER_KEYS) {
-      const v = Number.parseInt(zoomInput(cls).value, 10);
-      z[cls] = Number.isFinite(v) ? Math.min(16, Math.max(0, v)) : STAGGER_DEFAULT[cls];
-    }
-    return z;
-  }
-  function writeZooms(z) {
-    for (const cls of STAGGER_KEYS) zoomInput(cls).value = z[cls];
-  }
-  const sameZooms = (a, b) => STAGGER_KEYS.every((c) => a[c] === b[c]);
-  /** Staggering is for networks: MATSim-XML and GeoParquet on the MATSim side. */
+  let uids = 0;
+  const withUid = (l) => ({ ...l, values: [...l.values], uid: ++uids });
+  const plainLayers = (list) => list.map(({ uid, ...l }) => ({ ...l, values: [...l.values] }));
+  state.layers = PRESET.map(withUid);
+  state.catalog = null; // what step 1 found in the network: attributes, values, list entries
+  state.catalogId = 0; // changes with every new catalog
+  state.openLayers = new Set(); // uids of the layers whose settings are open
+  state.ranRules = null; // the rules of the last staggered run, to notice changes
+
+  const num = (x) => de(x, Number.isInteger(x) ? 0 : 2);
+  const mapDark = () => state.basemap === "dark" || (state.basemap === "none" && uiDark());
+  const colorOf = (l) => (HUES[l.color] ? HUES[l.color][mapDark() ? 1 : 0] : /^#[0-9a-f]{6}$/i.test(l.color ?? "") ? l.color : HUES.gray[0]);
   const staggerOn = () => state.mode === "matsim" && $("stagger").checked;
+  const isRest = (l) => l.op === "rest";
+
+  /** A layer's rule in words, for its summary line. */
+  function ruleText(l) {
+    if (isRest(l)) return "alle übrigen";
+    const attr = l.attr || "…";
+    if (!NEEDS_VALUES.has(l.op)) return `${attr} ${OPS[l.op]}`;
+    const values = l.values.length ? l.values.join(", ") : "…";
+    return `${attr} ${OPS[l.op]} ${values}`;
+  }
+
+  /** Names that work as MVT layer names and in -j: letters, digits, _ . -, each name once. */
+  const safeName = (name) => String(name ?? "").trim().replace(/[^\w.-]+/g, "_").replace(/^_+|_+$/g, "") || "layer";
+  function cleanNames(list) {
+    const seen = new Set();
+    for (const l of list) {
+      const base = safeName(l.name);
+      let name = base;
+      for (let k = 2; seen.has(name); k++) name = `${base}_${k}`;
+      seen.add(name);
+      l.name = name;
+    }
+  }
+  /** The edited layer gives way when its new name is taken, not the other one. */
+  function uniqueName(l) {
+    const base = safeName(l.name);
+    const others = new Set(state.layers.filter((x) => x !== l).map((x) => x.name));
+    let name = base;
+    for (let k = 2; others.has(name); k++) name = `${base}_${k}`;
+    l.name = name;
+  }
+
+  /** Back to a valid list: known operators, zooms 0–16, widths 0.2–5, the catch-all last. */
+  function normalizeLayers(list) {
+    const out = list.slice(0, MAX_LAYERS).map((l) => ({
+      name: String(l.name ?? ""),
+      zoom: Math.min(16, Math.max(0, Number.parseInt(l.zoom, 10) || 0)),
+      attr: String(l.attr ?? "").trim(),
+      op: l.op in OPS || l.op === "rest" ? l.op : "in",
+      values: (Array.isArray(l.values) ? l.values : []).map((v) => String(v).trim()).filter(Boolean),
+      color: HUES[l.color] || /^#[0-9a-f]{6}$/i.test(l.color ?? "") ? l.color : "gray",
+      width: Math.min(5, Math.max(0.2, Number(l.width) || 1)),
+      dash: Boolean(l.dash),
+    }));
+    // exactly one catch-all, at the end
+    const rest = out.filter(isRest).pop() ?? { ...PRESET[PRESET.length - 1] };
+    const rules = out.filter((l) => !isRest(l)).slice(0, MAX_LAYERS - 1);
+    const result = [...rules, { ...rest, op: "rest", attr: "", values: [] }];
+    cleanNames(result);
+    return result;
+  }
+
+  const rulesKey = (list = state.layers) => JSON.stringify(list.map((l) => [l.name, l.attr, l.op, l.values]));
+  const zoomsKey = (list = state.layers) => JSON.stringify(list.map((l) => [l.name, l.zoom]));
+  /** Short and stable, for the key of step 1 (the rules decide the layers there; zooms only in step 2). */
+  function hash(text) {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
+    return (h >>> 0).toString(36);
+  }
+  const samePreset = (list) => JSON.stringify(plainLayers(list)) === JSON.stringify(PRESET);
+
+  function saveLayers() {
+    store.set("kachelwerk.layers", JSON.stringify({ on: $("stagger").checked, layers: plainLayers(state.layers) }));
+  }
+
+  // ---- the list ----
+  function swatchButtons(l) {
+    const box = document.createElement("div");
+    box.className = "swatches";
+    box.setAttribute("role", "radiogroup");
+    box.setAttribute("aria-label", "Farbe");
+    for (const hue of Object.keys(HUES)) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "sw";
+      b.dataset.hue = hue;
+      b.setAttribute("role", "radio");
+      b.setAttribute("aria-checked", String(l.color === hue));
+      b.title = HUE_LABEL[hue];
+      b.setAttribute("aria-label", HUE_LABEL[hue]);
+      b.style.setProperty("--c", HUES[hue][mapDark() ? 1 : 0]);
+      box.append(b);
+    }
+    const custom = document.createElement("input");
+    custom.type = "color";
+    custom.className = "l-custom";
+    custom.title = "eigene Farbe";
+    custom.setAttribute("aria-label", "eigene Farbe");
+    custom.value = colorOf(l);
+    custom.classList.toggle("on", !HUES[l.color]);
+    box.append(custom);
+    return box;
+  }
+
+  function field(label, input, cls = "") {
+    const f = document.createElement("label");
+    f.className = `lf ${cls}`.trim();
+    f.append(label, input);
+    return f;
+  }
+
+  function textInput(cls, value, attrs = {}) {
+    const i = document.createElement("input");
+    i.className = cls;
+    Object.assign(i, { type: "text", value, spellcheck: false, autocomplete: "off" }, attrs);
+    return i;
+  }
+
+  function layerItem(l, index) {
+    const li = document.createElement("li");
+    li.className = "layer";
+    li.dataset.uid = l.uid;
+    const details = document.createElement("details");
+    details.open = state.openLayers.has(l.uid);
+    const summary = document.createElement("summary");
+    const sample = document.createElement("span");
+    sample.className = "sample";
+    const name = document.createElement("span");
+    name.className = "lname";
+    const rule = document.createElement("span");
+    rule.className = "lrule";
+    const zoom = document.createElement("span");
+    zoom.className = "lzoom";
+    summary.append(sample, name, rule, zoom);
+
+    const body = document.createElement("div");
+    body.className = "lbody";
+    const row1 = document.createElement("div");
+    row1.className = "lrow";
+    row1.append(
+      field("Name", textInput("l-name", l.name, { maxLength: 40 }), "grow"),
+      field("ab Zoom", Object.assign(document.createElement("input"), { className: "l-zoom", type: "number", min: 0, max: 16, value: l.zoom })),
+    );
+    body.append(row1);
+    if (isRest(l)) {
+      const p = document.createElement("p");
+      p.className = "lhint";
+      p.textContent = "Nimmt alle Links, die keine Regel darüber trifft. Er bleibt immer der letzte.";
+      body.append(p);
+    } else {
+      const op = document.createElement("select");
+      op.className = "l-op";
+      for (const [value, text] of Object.entries(OPS)) op.append(new Option(text, value, false, value === l.op));
+      const row2 = document.createElement("div");
+      row2.className = "lrow";
+      row2.append(field("Attribut", textInput("l-attr", l.attr, { placeholder: "z. B. type" }), "grow"), field("Bedingung", op));
+      row2.querySelector(".l-attr").setAttribute("list", "attr-list");
+      const values = field("Werte", textInput("l-values", l.values.join(", "), { placeholder: "durch Komma getrennt" }), "l-values-field");
+      const chips = document.createElement("div");
+      chips.className = "vchips";
+      chips.setAttribute("role", "group");
+      chips.setAttribute("aria-label", "Werte im Netz zum Anklicken");
+      const hint = document.createElement("p");
+      hint.className = "lhint";
+      body.append(row2, values, chips, hint);
+    }
+    const look = document.createElement("div");
+    look.className = "lrow look";
+    const colors = document.createElement("div");
+    colors.className = "lf grow";
+    const colorLabel = document.createElement("span");
+    colorLabel.className = "label";
+    colorLabel.textContent = "Farbe";
+    colors.append(colorLabel, swatchButtons(l));
+    look.append(colors);
+    const look2 = document.createElement("div");
+    look2.className = "lrow look";
+    const dash = document.createElement("label");
+    dash.className = "check l-dash-label";
+    const dashBox = Object.assign(document.createElement("input"), { type: "checkbox", className: "l-dash", checked: l.dash });
+    dash.append(dashBox, " gestrichelt");
+    look2.append(field("Breite", Object.assign(document.createElement("input"), { className: "l-width", type: "number", min: 0.2, max: 5, step: 0.1, value: l.width })), dash);
+    body.append(look, look2);
+    if (!isRest(l)) {
+      const tools = document.createElement("div");
+      tools.className = "ltools";
+      const last = state.layers.length - 2; // the catch-all cannot move
+      for (const [cls, text, off] of [["l-up", "nach oben", index === 0], ["l-down", "nach unten", index >= last], ["l-del", "entfernen", false]]) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = `linkbtn ${cls}`;
+        b.textContent = text;
+        b.disabled = off;
+        tools.append(b);
+      }
+      body.append(tools);
+    }
+    details.append(summary, body);
+    li.append(details);
+    updateItem(li, l);
+    return li;
+  }
+
+  /** The parts of a layer's item that follow its settings: summary, fields, chips, hints. */
+  function updateItem(li, l) {
+    // fields the user is not typing in show the settings as they are now (names get cleaned up)
+    const put = (sel, prop, value) => {
+      const el = li.querySelector(sel);
+      if (el && document.activeElement !== el && el[prop] !== value) el[prop] = value;
+    };
+    put(".l-name", "value", l.name);
+    put(".l-zoom", "value", String(l.zoom));
+    put(".l-width", "value", String(l.width));
+    put(".l-dash", "checked", l.dash);
+    if (!isRest(l)) {
+      put(".l-attr", "value", l.attr);
+      put(".l-op", "value", l.op);
+      const typed = li.querySelector(".l-values");
+      if (document.activeElement !== typed) put(".l-values", "value", l.values.join(", "));
+    }
+    const sample = li.querySelector(".sample");
+    sample.style.setProperty("--c", colorOf(l));
+    sample.style.setProperty("--w", `${Math.max(1.5, Math.min(6, 2.2 * l.width)).toFixed(1)}px`);
+    sample.classList.toggle("dash", l.dash);
+    li.querySelector(".lname").textContent = l.name;
+    li.querySelector(".lrule").textContent = ruleText(l);
+    li.querySelector(".lzoom").textContent = `z${l.zoom}`;
+    for (const b of li.querySelectorAll(".sw")) {
+      b.setAttribute("aria-checked", String(b.dataset.hue === l.color));
+      b.style.setProperty("--c", HUES[b.dataset.hue][mapDark() ? 1 : 0]);
+    }
+    const custom = li.querySelector(".l-custom");
+    custom.classList.toggle("on", !HUES[l.color]);
+    if (document.activeElement !== custom) custom.value = colorOf(l);
+    if (isRest(l)) return;
+    li.querySelector(".l-values-field").hidden = !NEEDS_VALUES.has(l.op);
+    li.querySelector(".l-values").placeholder = l.op === "gte" || l.op === "lte" ? "eine Zahl" : "durch Komma getrennt";
+    // what the network has for this attribute
+    const a = state.catalog?.find((x) => x.name === l.attr);
+    const chips = li.querySelector(".vchips");
+    const hint = li.querySelector(".lhint");
+    const offer = l.op === "in" ? a?.values : l.op === "contains" ? a?.tokens ?? a?.values : null;
+    const chosen = new Set(l.values.map((v) => (l.attr === "type" ? v.toLowerCase().replace(/^highway\./, "") : v.toLowerCase())));
+    // the chips are built again only when they offer something else; a chip that is replaced
+    // between mousedown and mouseup (a field losing focus updates the item) would lose its click
+    const offerKey = `${l.attr}\u0000${l.op}\u0000${state.catalogId}`;
+    if (chips.dataset.key !== offerKey) {
+      chips.dataset.key = offerKey;
+      chips.replaceChildren(...(offer ?? []).slice(0, 40).map(([value, n]) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "vchip";
+        b.dataset.value = value;
+        const count = document.createElement("span");
+        count.textContent = de(n);
+        b.append(`${value} `, count);
+        return b;
+      }));
+    }
+    for (const b of chips.children) b.setAttribute("aria-pressed", String(chosen.has(String(b.dataset.value).toLowerCase())));
+    chips.hidden = !chips.childElementCount;
+    if (!state.catalog || !l.attr) hint.textContent = state.catalog ? "" : "Nach dem ersten Kacheln stehen hier die Werte aus dem Netz zum Anklicken.";
+    else if (!a) hint.textContent = "Kein Link hat dieses Attribut.";
+    else if (l.op === "gte" || l.op === "lte") hint.textContent = a.min !== null ? `Werte von ${num(a.min)} bis ${num(a.max)}, auf ${de(a.n)} Links` : `auf ${de(a.n)} Links, aber keine Zahlen`;
+    else if (!offer && NEEDS_VALUES.has(l.op)) hint.textContent = `auf ${de(a.n)} Links, zu viele verschiedene Werte zum Anklicken`;
+    else hint.textContent = l.op === "has" || l.op === "true" ? `auf ${de(a.n)} Links gesetzt` : "";
+    hint.hidden = !hint.textContent;
+  }
+
+  function renderLayers() {
+    // the same layers in the same order are updated in place, so that typing goes on undisturbed
+    const list = $("layers");
+    const shown = [...list.children].map((li) => Number(li.dataset.uid));
+    if (shown.length === state.layers.length && shown.every((uid, i) => uid === state.layers[i].uid)) {
+      [...list.children].forEach((li, i) => updateItem(li, state.layers[i]));
+    } else {
+      list.replaceChildren(...state.layers.map(layerItem));
+    }
+    $("layer-add").disabled = state.layers.length >= MAX_LAYERS;
+    $("attr-list").replaceChildren(...(state.catalog ?? []).map((a) => {
+      const o = document.createElement("option");
+      o.value = a.name;
+      o.label = `${de(a.n)} Links${a.numeric ? ", Zahl" : ""}`;
+      return o;
+    }));
+    markPending();
+  }
+
+  /** After a change of rules or zooms: say that it takes a new run. Colours and widths apply at once. */
+  function markPending() {
+    const ran = state.ranRules;
+    const changed = Boolean(ran) && staggerOn() && (ran.rules !== rulesKey() || ran.zooms !== zoomsKey());
+    $("layers-pending").hidden = !changed;
+    $("run").classList.toggle("pending", changed);
+  }
+
+  let undo = null; // the layers before the last delete or reset
+  function offerUndo(text) {
+    $("layers-undo-text").textContent = text;
+    $("layers-undo").hidden = false;
+  }
+  function changed({ structure = false, look = false, keepUndo = false } = {}) {
+    if (!keepUndo) {
+      undo = null;
+      $("layers-undo").hidden = true;
+    }
+    if (structure) renderLayers();
+    else markPending();
+    saveLayers();
+    if (look) {
+      repaintOverlay();
+      renderLegend();
+      renderLayerTable();
+    }
+  }
+
+  const itemOf = (el) => {
+    const li = el.closest(".layer");
+    return li ? [li, state.layers.find((l) => l.uid === Number(li.dataset.uid))] : [null, null];
+  };
+
+  $("layers").addEventListener("toggle", (e) => {
+    const [, l] = itemOf(e.target);
+    if (l) e.target.open ? state.openLayers.add(l.uid) : state.openLayers.delete(l.uid);
+  }, true);
+
+  $("layers").addEventListener("input", (e) => {
+    const [li, l] = itemOf(e.target);
+    if (!l) return;
+    const t = e.target;
+    if (t.classList.contains("l-name")) l.name = t.value;
+    else if (t.classList.contains("l-attr")) l.attr = t.value.trim();
+    else if (t.classList.contains("l-values")) l.values = t.value.split(",").map((v) => v.trim()).filter(Boolean);
+    else if (t.classList.contains("l-custom")) {
+      l.color = t.value;
+      updateItem(li, l);
+      return changed({ look: true });
+    } else return;
+    updateItem(li, l);
+    changed();
+  });
+
+  $("layers").addEventListener("change", (e) => {
+    const [li, l] = itemOf(e.target);
+    if (!l) return;
+    const t = e.target;
+    if (t.classList.contains("l-name")) {
+      uniqueName(l);
+      t.value = l.name;
+    } else if (t.classList.contains("l-zoom")) {
+      l.zoom = Math.min(16, Math.max(0, Number.parseInt(t.value, 10) || 0));
+      t.value = l.zoom;
+    } else if (t.classList.contains("l-op")) {
+      l.op = t.value;
+    } else if (t.classList.contains("l-width")) {
+      l.width = Math.min(5, Math.max(0.2, Math.round((Number(t.value) || 1) * 10) / 10));
+      t.value = l.width;
+      updateItem(li, l);
+      return changed({ look: true });
+    } else if (t.classList.contains("l-dash")) {
+      l.dash = t.checked;
+      updateItem(li, l);
+      return changed({ look: true });
+    } else return;
+    updateItem(li, l);
+    changed();
+  });
+
+  $("layers").addEventListener("click", (e) => {
+    const [li, l] = itemOf(e.target);
+    if (!l) return;
+    const sw = e.target.closest(".sw");
+    const chip = e.target.closest(".vchip");
+    const i = state.layers.indexOf(l);
+    if (sw) {
+      l.color = sw.dataset.hue;
+      updateItem(li, l);
+      changed({ look: true });
+    } else if (chip) {
+      // a click on a value of the network adds it or takes it away
+      const v = chip.dataset.value;
+      const key = (x) => (l.attr === "type" ? x.toLowerCase().replace(/^highway\./, "") : x.toLowerCase());
+      const has = l.values.some((x) => key(x) === key(v));
+      l.values = has ? l.values.filter((x) => key(x) !== key(v)) : [...l.values, v];
+      li.querySelector(".l-values").value = l.values.join(", ");
+      updateItem(li, l);
+      changed();
+    } else if (e.target.closest(".l-up") && i > 0) {
+      [state.layers[i - 1], state.layers[i]] = [state.layers[i], state.layers[i - 1]];
+      changed({ structure: true, look: true });
+    } else if (e.target.closest(".l-down") && i < state.layers.length - 2) {
+      [state.layers[i + 1], state.layers[i]] = [state.layers[i], state.layers[i + 1]];
+      changed({ structure: true, look: true });
+    } else if (e.target.closest(".l-del")) {
+      undo = state.layers.map((x) => ({ ...x, values: [...x.values] }));
+      state.layers.splice(i, 1);
+      offerUndo(`Layer ${l.name} entfernt.`);
+      changed({ structure: true, look: true, keepUndo: true });
+    }
+  });
+
+  /** The lowest-ranked hue no layer has yet, the greys last. */
+  function freeHue() {
+    const used = new Set(state.layers.map((l) => l.color));
+    return Object.keys(HUES).find((h) => !used.has(h)) ?? "gray";
+  }
+
+  $("layer-add").addEventListener("click", () => {
+    if (state.layers.length >= MAX_LAYERS) return;
+    const l = withUid({ name: `layer_${state.layers.length}`, zoom: 12, attr: "type", op: "in", values: [], color: freeHue(), width: 1, dash: false });
+    state.layers.splice(state.layers.length - 1, 0, l);
+    cleanNames(state.layers);
+    state.openLayers.add(l.uid);
+    changed({ structure: true, look: true });
+    $("layers").querySelector(`[data-uid="${l.uid}"] .l-name`)?.focus();
+  });
+
+  $("layer-reset").addEventListener("click", () => {
+    if (samePreset(state.layers)) return;
+    undo = state.layers.map((x) => ({ ...x, values: [...x.values] }));
+    state.layers = PRESET.map(withUid);
+    state.openLayers.clear();
+    offerUndo("Vorgabe aus tile.py geladen.");
+    changed({ structure: true, look: true, keepUndo: true });
+  });
+
+  $("layers-undo-btn").addEventListener("click", () => {
+    if (!undo) return;
+    state.layers = undo;
+    undo = null;
+    $("layers-undo").hidden = true;
+    changed({ structure: true, look: true, keepUndo: true });
+  });
 
   function syncStagger() {
     const on = staggerOn();
     $("stagger-field").hidden = state.mode !== "matsim";
-    $("stagger-field").classList.toggle("off", !$("stagger").checked);
-    for (const cls of STAGGER_KEYS) zoomInput(cls).disabled = !on;
+    $("layers-wrap").hidden = !$("stagger").checked;
     // nothing is dropped while staggering
     $("drop-densest").disabled = on;
     $("drop-field").classList.toggle("disabled", on);
-    // the classes name the layers of a network; GeoParquet stays one layer
-    const named = on && state.source?.kind !== "parquet";
-    $("layer").disabled = named;
-    $("layer-field").classList.toggle("disabled", named);
+    // the rules name the layers; one layer needs a name of its own
+    $("layer").disabled = on;
+    $("layer-field").classList.toggle("disabled", on);
+    markPending();
   }
-  function saveStagger() {
-    store.set("kachelwerk.stagger", JSON.stringify({ on: $("stagger").checked, zooms: readZooms() }));
-  }
-  try {
-    const saved = JSON.parse(store.get("kachelwerk.stagger") ?? "null");
-    if (saved) {
-      $("stagger").checked = saved.on !== false;
-      writeZooms({ ...STAGGER_DEFAULT, ...saved.zooms });
-      writeZooms(readZooms());
-    }
-  } catch { /* nothing usable stored */ }
   $("stagger").addEventListener("change", () => {
     syncStagger();
-    saveStagger();
+    saveLayers();
   });
-  for (const cls of STAGGER_KEYS) {
-    zoomInput(cls).addEventListener("change", () => {
-      writeZooms(readZooms());
-      saveStagger();
+
+  /** Layers from the address: ?layer=name:zoom:attr:op:values:color:width:dash;… (fields URI-encoded). */
+  function layersFromLink(raw) {
+    const dec = (s) => {
+      try { return decodeURIComponent(s); } catch { return s; }
+    };
+    const list = raw.split(";").filter(Boolean).map((part) => {
+      const [name, zoom, attr, op, values, color, width, dash] = part.split(":");
+      return {
+        name: dec(name ?? ""),
+        zoom,
+        attr: dec(attr ?? ""),
+        op: dec(op ?? ""),
+        values: (values ?? "").split(",").filter(Boolean).map(dec),
+        color: dec(color ?? ""),
+        width,
+        dash: dash === "1",
+      };
     });
+    return list.length ? normalizeLayers(list) : null;
+  }
+  function layersToLink(list) {
+    const enc = encodeURIComponent;
+    return list.map((l) => [enc(l.name), l.zoom, enc(l.attr), l.op, l.values.map(enc).join(","), enc(l.color), l.width, l.dash ? 1 : 0].join(":")).join(";");
   }
 
-  /** The zooms of the classes that have links (all of them for GeoParquet, whose classes are not counted). */
+  try {
+    const saved = JSON.parse(store.get("kachelwerk.layers") ?? "null");
+    const old = JSON.parse(store.get("kachelwerk.stagger") ?? "null"); // the six zooms of the first version
+    if (saved?.layers) {
+      $("stagger").checked = saved.on !== false;
+      state.layers = normalizeLayers(saved.layers).map(withUid);
+    } else if (old) {
+      $("stagger").checked = old.on !== false;
+      state.layers = PRESET.map((l) => withUid({ ...l, zoom: Number.isInteger(old.zooms?.[l.name]) ? old.zooms[l.name] : l.zoom }));
+    }
+  } catch { /* nothing usable stored */ }
+
+  // ---- the result: layers with their links, in the legend and the table ----
+  /** The zooms of the layers that got links (all of them when the links were not counted). */
   const filledZooms = (info) => {
-    const z = STAGGER_KEYS.filter((c) => !info.classes || info.classes[c] > 0).map((c) => info.stagger[c]);
-    return z.length ? z : Object.values(info.stagger);
+    const z = info.layers.filter((l) => l.n > 0 || !info.layerCounts).map((l) => l.zoom);
+    return z.length ? z : info.layers.map((l) => l.zoom);
   };
 
-  /** Links per class and the zoom each class starts at; GeoParquet's classes are not counted. */
-  function renderClasses(info) {
-    $("classes").hidden = !info?.stagger;
-    $("classes-body").replaceChildren(...(info?.stagger ? STAGGER_KEYS : []).map((cls) => {
+  /** The current settings of the layer a source layer of the tiles came from. */
+  function layerFor(sourceLayer) {
+    const uid = state.overlay?.uids?.[sourceLayer];
+    return state.layers.find((l) => l.uid === uid) ?? state.layers.find((l) => l.name === sourceLayer) ?? null;
+  }
+
+  function renderLayerTable() {
+    const info = state.shownInfo;
+    $("classes").hidden = !info?.layers;
+    $("classes-body").replaceChildren(...(info?.layers ?? []).map((row) => {
       const tr = document.createElement("tr");
-      const n = info.classes ? info.classes[cls] ?? 0 : null;
-      tr.className = n === 0 ? "empty" : "";
-      for (const [value, cell] of [[`z${info.stagger[cls]}`, "z"], [CLASS_LABEL[cls], "c"], [n === null ? "–" : de(n), "n"]]) {
-        const td = tr.insertCell();
-        td.className = cell;
-        td.textContent = value;
+      tr.className = row.n === 0 && info.layerCounts ? "empty" : "";
+      const l = layerFor(row.name);
+      const z = tr.insertCell();
+      z.className = "z";
+      z.textContent = `z${row.zoom}`;
+      const name = tr.insertCell();
+      name.className = "c";
+      const sample = document.createElement("span");
+      sample.className = "sample";
+      if (l) {
+        sample.style.setProperty("--c", colorOf(l));
+        sample.style.setProperty("--w", `${Math.max(1.5, Math.min(6, 2.2 * l.width)).toFixed(1)}px`);
+        sample.classList.toggle("dash", l.dash);
       }
+      name.append(sample, row.name);
+      const n = tr.insertCell();
+      n.className = "n";
+      n.textContent = info.layerCounts ? de(row.n) : "–";
       return tr;
     }));
   }
@@ -1308,7 +1906,12 @@ details.log pre {
     // a network belongs to the MATSim side, GeoJSON, FlatGeobuf and CSV to the other one
     if (src.kind === "matsim") setMode("matsim", { remember: false });
     else if (src.kind !== "parquet") setMode("geo", { remember: false });
+    // what a new file holds is known after its first run
+    state.catalog = null;
+    state.catalogId++;
+    state.ranRules = null;
     syncStagger();
+    renderLayers();
     renderSource();
   }
 
@@ -1813,7 +2416,8 @@ details.log pre {
 
   // ---------- links ----------
   // MATSim: ?net=<path below countries/de/ or address>&geo=<path from the network's folder, address or 0>&pt=ohne|nur
-  //         &staffel=0 (not staggered) or six zooms motorway,main,bike,pt,minor_car,minor_path&crs=…
+  //         &staffel=0 (one layer, not staggered), &layer=name:zoom:attr:op:values:color:width:dash;… (layers other
+  //         than the preset; the older &staffel=4,8,9,10,11,12 gives the preset other zooms)&crs=…
   // other data: ?data=<path or address>&crs=…
   function relativeTo(folder, url) {
     if (url.startsWith(folder)) return url.slice(folder.length);
@@ -1840,15 +2444,16 @@ details.log pre {
         else if (g.url) p.set("geo", relativeTo(folderOf(src.url), g.url));
       }
       if (state.pt !== "all") p.set("pt", state.pt === "without" ? "ohne" : "nur");
-      const zooms = readZooms();
       if (!$("stagger").checked) p.set("staffel", "0");
-      else if (!sameZooms(zooms, STAGGER_DEFAULT)) p.set("staffel", STAGGER_KEYS.map((c) => zooms[c]).join(","));
     } else {
       p.set("data", short);
     }
     const crs = $("crs").value.trim();
     if (crs && crs !== (state.mode === "matsim" ? DEFAULT_CRS : "")) p.set("crs", crs);
-    history.replaceState(null, "", `${location.pathname}?${p.toString().replaceAll("%2F", "/").replaceAll("%2C", ",")}`);
+    let query = p.toString().replaceAll("%2F", "/").replaceAll("%2C", ",");
+    // the layers go in as they are: their fields are encoded already, URLSearchParams would encode them twice
+    if (state.mode === "matsim" && $("stagger").checked && !samePreset(state.layers)) query += `&layer=${layersToLink(state.layers)}`;
+    history.replaceState(null, "", `${location.pathname}?${query}`);
   }
   function clearLink() {
     if (location.search) history.replaceState(null, "", location.pathname);
@@ -1946,15 +2551,19 @@ details.log pre {
   const linkedData = resolve(params.get("data"));
   state.pt = { ohne: "without", nur: "only" }[params.get("pt")] ?? "all";
   if (linkedNet && !linkedData) {
-    // a link brings the staggering it was made with, not the one stored here
+    // a link brings the layers it was made with, not the ones stored here
     const staffel = params.get("staffel");
+    const raw = /[?&]layer=([^&]*)/.exec(location.search)?.[1];
     const list = (staffel ?? "").split(",").map(Number);
     $("stagger").checked = staffel !== "0";
-    writeZooms(list.length === STAGGER_KEYS.length && list.every(Number.isInteger)
-      ? Object.fromEntries(STAGGER_KEYS.map((c, i) => [c, list[i]]))
-      : STAGGER_DEFAULT);
-    writeZooms(readZooms());
+    const linked = raw ? layersFromLink(raw) : null;
+    if (linked) state.layers = linked.map(withUid);
+    else if (list.length === LEGACY_ORDER.length && list.every(Number.isInteger)) {
+      const zooms = Object.fromEntries(LEGACY_ORDER.map((c, i) => [c, list[i]]));
+      state.layers = normalizeLayers(PRESET.map((l) => ({ ...l, zoom: zooms[l.name] ?? l.zoom }))).map(withUid);
+    } else state.layers = PRESET.map(withUid);
   }
+  renderLayers();
   setMode(linkedData ? "geo" : linkedNet ? "matsim" : store.get("kachelwerk.mode") ?? "matsim", { remember: false });
   if (params.get("crs")) $("crs").value = params.get("crs");
   const linked = linkedData ?? linkedNet;

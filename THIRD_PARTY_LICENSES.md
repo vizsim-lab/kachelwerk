@@ -13,6 +13,9 @@ am Ende; gleiche Texte nur einmal, mit allen Paketen, die sie mitbringen.
 | MapLibre GL JS 5.6.0 mit gebündelten Paketen | `vendor/maplibre-gl/` | BSD-3-Clause, [gebündelte Pakete](#maplibre-gl-js) |
 | pmtiles 4.3.0, darin fflate 0.8.3 | `vendor/pmtiles/` | BSD-3-Clause, MIT |
 | @bjorn3/browser_wasi_shim 0.4.2 | `vendor/browser_wasi_shim/` | MIT OR Apache-2.0 |
+| hyparquet 1.31.5 | `vendor/hyparquet/` | MIT |
+| hyparquet-compressors 1.1.2 (Gzip, LZ4), darin Code nach fflate | `vendor/hyparquet-compressors/` | MIT |
+| fzstd 0.1.1 | `vendor/fzstd/` | MIT |
 | Schriften Barlow, Barlow Semi Condensed, IBM Plex Mono | `vendor/fonts/` | OFL-1.1 |
 
 Nicht in diesem Repository ist das Beispielnetz: ein Ausschnitt aus dem
@@ -199,6 +202,20 @@ als `LICENSE-fflate.txt` daneben.
 
 `vendor/browser_wasi_shim/` ist `dist/` von @bjorn3/browser_wasi_shim 0.4.2 aus npm, unverändert,
 unter MIT OR Apache-2.0 ([T1](#t1), [T44](#t44)).
+
+## hyparquet
+
+`vendor/hyparquet/` ist `src/` von hyparquet 1.31.5 aus npm (Hyperparam), unverändert, ohne
+`node.js`, das nur unter Node gebraucht wird ([T86](#t86)). `snappy.js` darin stammt aus snappyjs
+von Zhipeng Jia, MIT, mit dem Hinweis in der Datei. Der Worker lädt hyparquet nur, wenn er ein
+GeoParquet-Netz selbst liest.
+
+`vendor/hyparquet-compressors/` sind `gzip.js`, `gzip.huffman.js` und `lz4.js` aus `src/` von
+hyparquet-compressors 1.1.2 aus npm (Hyperparam), unverändert ([T86](#t86)). `gzip.js` ist nach
+fflate von Arjun Barrett entstanden ([T82](#t82)).
+
+`vendor/fzstd/fzstd.js` ist `esm/index.mjs` von fzstd 0.1.1 aus npm (Arjun Barrett), unverändert
+und umbenannt ([T87](#t87)).
 
 ## Schriften
 
@@ -5217,3 +5234,44 @@ FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
 ```
 
+### T86
+
+Aus: hyparquet 1.31.5 (LICENSE), hyparquet-compressors 1.1.2 (LICENSE)
+
+```
+The MIT License (MIT)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+```
+
+### T87
+
+Aus: fzstd 0.1.1 (LICENSE)
+
+```
+MIT License
+
+Copyright (c) 2020 Arjun Barrett
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
